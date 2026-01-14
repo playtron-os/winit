@@ -84,6 +84,29 @@
       <arg name="duration_ms" type="uint" summary="animation duration in milliseconds"/>
     </request>
 
+    <request name="resize_to_with_position">
+      <description summary="request animated resize with target position">
+        Request the compositor to animate a resize from the current window
+        geometry to the specified target size and position. The compositor
+        will animate both size and position smoothly.
+        
+        The client should render at each intermediate size for smooth
+        animation. When the animation completes, a 'done' event is sent.
+        
+        If width or height is 0, that dimension will not be changed.
+        The x and y coordinates specify the target window position in
+        output-local coordinates.
+        
+        If the window is maximized/fullscreen, the position will be stored
+        and used when the window is restored to normal state.
+      </description>
+      <arg name="x" type="int" summary="target x position in logical pixels"/>
+      <arg name="y" type="int" summary="target y position in logical pixels"/>
+      <arg name="width" type="int" summary="target width in logical pixels"/>
+      <arg name="height" type="int" summary="target height in logical pixels"/>
+      <arg name="duration_ms" type="uint" summary="animation duration in milliseconds"/>
+    </request>
+
     <event name="done">
       <description summary="resize animation completed">
         Sent when the animated resize has completed and the window has

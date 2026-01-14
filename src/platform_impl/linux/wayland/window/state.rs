@@ -317,6 +317,14 @@ impl WindowState {
 
         let stateless = Self::is_stateless(&configure);
 
+        tracing::trace!(
+            "configure: stateless={}, configure.new_size={:?}, current_size={:?}, stateless_size={:?}",
+            stateless,
+            configure.new_size,
+            self.size,
+            self.stateless_size
+        );
+
         let (mut new_size, constrain) = if let Some(frame) = self.frame.as_mut() {
             // Configure the window states.
             frame.update_state(configure.state);
@@ -338,6 +346,8 @@ impl WindowState {
                 _ => (self.size, true),
             }
         };
+
+        tracing::debug!("configure: chosen new_size={:?}, constrain={}", new_size, constrain);
 
         // Apply configure bounds only when compositor let the user decide what size to pick.
         if constrain {
@@ -642,9 +652,33 @@ impl WindowState {
 
     /// Try to resize the window when the user can do so.
     pub fn request_inner_size(&mut self, inner_size: Size) -> PhysicalSize<u32> {
-        let is_resizable = self.last_configure.as_ref().map(Self::is_stateless).unwrap_or(true);
-        if is_resizable {
-            self.resize(inner_size.to_logical(self.scale_factor()))
+        let logical_size = inner_size.to_logical(self.scale_factor());
+        let is_stateless = self.last_configure.as_ref().map(Self::is_stateless).unwrap_or(true);
+
+        tracing::trace!(
+            "request_inner_size: inner_size={:?}, logical_size={:?}, is_stateless={}, current_stateless_size={:?}",
+            inner_size,
+            logical_size,
+            is_stateless,
+            self.stateless_size
+        );
+
+        if is_stateless {
+            // Window is floating/normal - resize immediately
+            tracing::trace!("request_inner_size: window is stateless, calling resize()");
+            self.resize(logical_size);
+        } else {
+            // Window is maximized/fullscreen/tiled - store as the restore size
+            // so when unmaximized it will restore to this size
+            tracing::trace!(
+                "request_inner_size: window is NOT stateless (maximized/tiled), storing {:?} as stateless_size for restore",
+                logical_size
+            );
+            self.stateless_size = logical_size;
+
+            // Send the resize hint to the compositor via animated_resize protocol
+            // The compositor will update the restore geometry for when window is unmaximized
+            self.request_animated_resize(logical_size.width as i32, logical_size.height as i32, 0);
         }
         logical_to_physical_rounded(self.inner_size(), self.scale_factor())
     }
@@ -1084,6 +1118,57 @@ impl WindowState {
         if let Some(controller) = self.animated_resize_controller.as_ref() {
             tracing::trace!(width, height, duration_ms, "Requesting animated resize to compositor");
             controller.resize_to(width, height, duration_ms);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Request an animated resize with explicit position via the animated resize protocol.
+    ///
+    /// This uses the compositor's animated_resize protocol to smoothly animate
+    /// the window from its current geometry to the target geometry.
+    ///
+    /// If the window is maximized, the position and size will be stored and used
+    /// when the window is restored to normal state.
+    ///
+    /// # Arguments
+    /// * `x` - Target x position in logical pixels
+    /// * `y` - Target y position in logical pixels
+    /// * `width` - Target width in logical pixels
+    /// * `height` - Target height in logical pixels
+    /// * `duration_ms` - Animation duration in milliseconds
+    #[inline]
+    pub fn request_animated_resize_with_position(
+        &mut self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        duration_ms: u32,
+    ) -> bool {
+        // Create controller if we don't have one yet
+        if self.animated_resize_controller.is_none() {
+            if let Some(manager) = self.animated_resize_manager.as_ref() {
+                let controller =
+                    manager.get_animated_resize(self.window.wl_surface(), &self.queue_handle);
+                self.animated_resize_controller = Some(controller);
+            } else {
+                tracing::trace!("Animated resize manager unavailable");
+                return false;
+            }
+        }
+
+        if let Some(controller) = self.animated_resize_controller.as_ref() {
+            tracing::trace!(
+                x,
+                y,
+                width,
+                height,
+                duration_ms,
+                "Requesting animated resize with position to compositor"
+            );
+            controller.resize_to_with_position(x, y, width, height, duration_ms);
             true
         } else {
             false

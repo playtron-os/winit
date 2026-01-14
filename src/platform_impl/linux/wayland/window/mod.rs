@@ -428,6 +428,30 @@ impl Window {
         self.window_state.lock().unwrap().request_animated_resize(width, height, duration_ms)
     }
 
+    /// Request an animated resize with explicit position using the COSMIC protocol.
+    ///
+    /// If the window is maximized, the position and size will be stored and used
+    /// when the window is restored to normal state.
+    ///
+    /// Returns `true` if the request was sent, `false` if the protocol is not available.
+    #[inline]
+    pub fn request_animated_resize_with_position(
+        &self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        duration_ms: u32,
+    ) -> bool {
+        self.window_state.lock().unwrap().request_animated_resize_with_position(
+            x,
+            y,
+            width,
+            height,
+            duration_ms,
+        )
+    }
+
     #[inline]
     pub fn set_decorations(&self, decorate: bool) {
         self.window_state.lock().unwrap().set_decorate(decorate)

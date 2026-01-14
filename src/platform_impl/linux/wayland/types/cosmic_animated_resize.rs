@@ -71,6 +71,26 @@ impl AnimatedResizeController {
         self.controller.resize_to(width, height, duration_ms);
     }
 
+    /// Request the compositor to animate a resize from current geometry to target geometry.
+    ///
+    /// # Arguments
+    /// * `x` - Target x position in logical pixels
+    /// * `y` - Target y position in logical pixels
+    /// * `width` - Target width in logical pixels (0 = don't change)
+    /// * `height` - Target height in logical pixels (0 = don't change)
+    /// * `duration_ms` - Animation duration in milliseconds
+    pub fn resize_to_with_position(
+        &self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        duration_ms: u32,
+    ) {
+        self.controller
+            .resize_to_with_position(x, y, width, height, duration_ms);
+    }
+
     /// Destroy this controller.
     pub fn destroy(&self) {
         self.controller.destroy();

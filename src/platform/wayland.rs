@@ -97,6 +97,33 @@ pub trait WindowExtWayland {
     /// * `height` - Target height in logical pixels  
     /// * `duration_ms` - Animation duration in milliseconds
     fn request_animated_resize(&self, width: i32, height: i32, duration_ms: u32) -> bool;
+
+    /// Request an animated resize with explicit position using the COSMIC protocol.
+    ///
+    /// This uses the compositor's animated_resize protocol to smoothly animate
+    /// the window from its current geometry to the target geometry.
+    ///
+    /// If the window is maximized, the position and size will be stored and used
+    /// when the window is restored to normal state.
+    ///
+    /// Returns `true` if the request was sent, `false` if:
+    /// - The window is not a Wayland window
+    /// - The compositor doesn't support the animated resize protocol
+    ///
+    /// # Arguments
+    /// * `x` - Target x position in logical pixels
+    /// * `y` - Target y position in logical pixels
+    /// * `width` - Target width in logical pixels
+    /// * `height` - Target height in logical pixels
+    /// * `duration_ms` - Animation duration in milliseconds
+    fn request_animated_resize_with_position(
+        &self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        duration_ms: u32,
+    ) -> bool;
 }
 
 impl WindowExtWayland for Window {
@@ -119,6 +146,25 @@ impl WindowExtWayland for Window {
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => {
                 window.request_animated_resize(width, height, duration_ms)
+            },
+        }
+    }
+
+    #[inline]
+    fn request_animated_resize_with_position(
+        &self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        duration_ms: u32,
+    ) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.request_animated_resize_with_position(x, y, width, height, duration_ms)
             },
         }
     }
