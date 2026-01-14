@@ -34,6 +34,9 @@ use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
 use crate::platform_impl::wayland::logical_to_physical_rounded;
+use crate::platform_impl::wayland::types::cosmic_animated_resize::{
+    AnimatedResizeController, CosmicAnimatedResizeManager,
+};
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::{PlatformCustomCursor, WindowId};
@@ -145,6 +148,11 @@ pub struct WindowState {
     blur: Option<OrgKdeKwinBlur>,
     blur_manager: Option<KWinBlurManager>,
 
+    /// COSMIC animated resize manager.
+    animated_resize_manager: Option<CosmicAnimatedResizeManager>,
+    /// Active animated resize controller for this window.
+    animated_resize_controller: Option<AnimatedResizeController>,
+
     /// Whether the client side decorations have pending move operations.
     ///
     /// The value is the serial of the event triggered moved.
@@ -185,6 +193,8 @@ impl WindowState {
         Self {
             blur: None,
             blur_manager: winit_state.kwin_blur_manager.clone(),
+            animated_resize_manager: winit_state.animated_resize_manager.clone(),
+            animated_resize_controller: None,
             compositor,
             connection,
             csd_fails: false,
@@ -632,10 +642,10 @@ impl WindowState {
 
     /// Try to resize the window when the user can do so.
     pub fn request_inner_size(&mut self, inner_size: Size) -> PhysicalSize<u32> {
-        if self.last_configure.as_ref().map(Self::is_stateless).unwrap_or(true) {
+        let is_resizable = self.last_configure.as_ref().map(Self::is_stateless).unwrap_or(true);
+        if is_resizable {
             self.resize(inner_size.to_logical(self.scale_factor()))
         }
-
         logical_to_physical_rounded(self.inner_size(), self.scale_factor())
     }
 
@@ -1041,6 +1051,42 @@ impl WindowState {
         } else if !blurred && self.blur.is_some() {
             self.blur_manager.as_ref().unwrap().unset(self.window.wl_surface());
             self.blur.take().unwrap().release();
+        }
+    }
+
+    /// Request an animated resize to the target size.
+    ///
+    /// This uses the COSMIC animated resize protocol to request smooth
+    /// compositor-driven resize animation. The compositor will send
+    /// intermediate configure events for smooth animation.
+    ///
+    /// Returns `true` if the request was sent, `false` if the protocol
+    /// is not available.
+    ///
+    /// # Arguments
+    /// * `width` - Target width in logical pixels
+    /// * `height` - Target height in logical pixels
+    /// * `duration_ms` - Animation duration in milliseconds
+    #[inline]
+    pub fn request_animated_resize(&mut self, width: i32, height: i32, duration_ms: u32) -> bool {
+        // Create controller if we don't have one yet
+        if self.animated_resize_controller.is_none() {
+            if let Some(manager) = self.animated_resize_manager.as_ref() {
+                let controller =
+                    manager.get_animated_resize(self.window.wl_surface(), &self.queue_handle);
+                self.animated_resize_controller = Some(controller);
+            } else {
+                tracing::trace!("Animated resize manager unavailable");
+                return false;
+            }
+        }
+
+        if let Some(controller) = self.animated_resize_controller.as_ref() {
+            tracing::trace!(width, height, duration_ms, "Requesting animated resize to compositor");
+            controller.resize_to(width, height, duration_ms);
+            true
+        } else {
+            false
         }
     }
 

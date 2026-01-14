@@ -305,8 +305,25 @@ impl Window {
 
     #[inline]
     pub fn request_inner_size(&self, size: Size) -> Option<PhysicalSize<u32>> {
+        let old_size = self.inner_size();
         let mut window_state = self.window_state.lock().unwrap();
         let new_size = window_state.request_inner_size(size);
+        drop(window_state);
+
+        // If the size actually changed, queue a resize event so the application knows
+        if new_size != old_size {
+            tracing::trace!(
+                "request_inner_size: size changed from {:?} to {:?}, queuing Resized event",
+                old_size,
+                new_size
+            );
+            self.window_events_sink
+                .lock()
+                .unwrap()
+                .push_window_event(WindowEvent::Resized(new_size), self.window_id);
+            self.event_loop_awakener.ping();
+        }
+
         self.request_redraw();
         Some(new_size)
     }
@@ -401,6 +418,14 @@ impl Window {
     #[inline]
     pub fn set_blur(&self, blur: bool) {
         self.window_state.lock().unwrap().set_blur(blur);
+    }
+
+    /// Request an animated resize to the target size using the COSMIC protocol.
+    ///
+    /// Returns `true` if the request was sent, `false` if the protocol is not available.
+    #[inline]
+    pub fn request_animated_resize(&self, width: i32, height: i32, duration_ms: u32) -> bool {
+        self.window_state.lock().unwrap().request_animated_resize(width, height, duration_ms)
     }
 
     #[inline]

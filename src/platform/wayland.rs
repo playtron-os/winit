@@ -81,6 +81,22 @@ impl<T> EventLoopBuilderExtWayland for EventLoopBuilder<T> {
 pub trait WindowExtWayland {
     /// Returns `xdg_toplevel` of the window or [`None`] if the window is X11 window.
     fn xdg_toplevel(&self) -> Option<NonNull<c_void>>;
+
+    /// Request an animated resize to the target size using the COSMIC protocol.
+    ///
+    /// This uses the `zcosmic_animated_resize_v1` protocol to request smooth
+    /// compositor-driven resize animation. The compositor will send intermediate
+    /// configure events for smooth animation.
+    ///
+    /// Returns `true` if the request was sent, `false` if:
+    /// - The window is not a Wayland window
+    /// - The compositor doesn't support the animated resize protocol
+    ///
+    /// # Arguments
+    /// * `width` - Target width in logical pixels
+    /// * `height` - Target height in logical pixels  
+    /// * `duration_ms` - Animation duration in milliseconds
+    fn request_animated_resize(&self, width: i32, height: i32, duration_ms: u32) -> bool;
 }
 
 impl WindowExtWayland for Window {
@@ -92,6 +108,18 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => None,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.xdg_toplevel(),
+        }
+    }
+
+    #[inline]
+    fn request_animated_resize(&self, width: i32, height: i32, duration_ms: u32) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.request_animated_resize(width, height, duration_ms)
+            },
         }
     }
 }
