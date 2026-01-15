@@ -1,6 +1,7 @@
 //! Wayland protocol implementation boilerplate.
 
 pub mod cosmic_animated_resize;
+pub mod cosmic_surface_embed;
 pub mod cursor;
 pub mod kwin_blur;
 pub mod wp_fractional_scaling;

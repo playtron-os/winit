@@ -82,6 +82,13 @@ pub trait WindowExtWayland {
     /// Returns `xdg_toplevel` of the window or [`None`] if the window is X11 window.
     fn xdg_toplevel(&self) -> Option<NonNull<c_void>>;
 
+    /// Returns `wl_surface` of the window or [`None`] if the window is X11 window.
+    ///
+    /// The returned pointer is to the wayland-client `wl_surface` object.
+    /// This can be used for protocols that need direct access to the surface,
+    /// such as surface embedding protocols.
+    fn wl_surface(&self) -> Option<NonNull<c_void>>;
+
     /// Request an animated resize to the target size using the COSMIC protocol.
     ///
     /// This uses the `zcosmic_animated_resize_v1` protocol to request smooth
@@ -124,6 +131,111 @@ pub trait WindowExtWayland {
         height: i32,
         duration_ms: u32,
     ) -> bool;
+
+    /// Embed a toplevel by process ID into this window's surface.
+    ///
+    /// This uses the `zcosmic_surface_embed_manager_v1` protocol to embed a
+    /// foreign toplevel window within this window's surface. The compositor
+    /// will monitor for new toplevels from the specified PID and embed the
+    /// first matching one.
+    ///
+    /// Returns an embed ID that can be used to update geometry or remove the
+    /// embed, or `None` if:
+    /// - The window is not a Wayland window
+    /// - The compositor doesn't support the surface embed protocol
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID of the application to embed
+    /// * `app_id` - Optional app_id hint for verification (can be empty)
+    /// * `x` - X position within this window's surface
+    /// * `y` - Y position within this window's surface
+    /// * `width` - Width of the embed region
+    /// * `height` - Height of the embed region
+    /// * `interactive` - Whether input should be routed to the embedded surface
+    fn embed_toplevel_by_pid(
+        &self,
+        pid: u32,
+        app_id: &str,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        interactive: bool,
+    ) -> Option<u64>;
+
+    /// Update the geometry of an embedded surface.
+    ///
+    /// # Arguments
+    /// * `embed_id` - The ID returned from `embed_toplevel_by_pid`
+    /// * `x` - X position within this window's surface
+    /// * `y` - Y position within this window's surface
+    /// * `width` - Width of the embed region
+    /// * `height` - Height of the embed region
+    fn set_embed_geometry(
+        &self,
+        embed_id: u64,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> bool;
+
+    /// Set anchor-based positioning for an embedded surface.
+    ///
+    /// Instead of specifying absolute (x, y) coordinates, this allows positioning
+    /// relative to the parent window edges. The geometry is automatically
+    /// recalculated by the compositor when the parent window resizes.
+    ///
+    /// # Arguments
+    /// * `embed_id` - The ID returned from `embed_toplevel_by_pid`
+    /// * `anchor` - Bitflags indicating which edges to anchor to (0=none, 1=top, 2=bottom, 4=left, 8=right)
+    /// * `margin_top` - Margin from top edge
+    /// * `margin_right` - Margin from right edge  
+    /// * `margin_bottom` - Margin from bottom edge
+    /// * `margin_left` - Margin from left edge
+    /// * `width` - Width of embed region (0 to stretch between left/right anchors)
+    /// * `height` - Height of embed region (0 to stretch between top/bottom anchors)
+    fn set_embed_anchor(
+        &self,
+        embed_id: u64,
+        anchor: u32,
+        margin_top: i32,
+        margin_right: i32,
+        margin_bottom: i32,
+        margin_left: i32,
+        width: i32,
+        height: i32,
+    ) -> bool;
+
+    /// Set corner radius for an embedded surface.
+    ///
+    /// This allows the parent to specify rounded corners that match its own UI.
+    /// Each corner can have a different radius. Values are in logical pixels.
+    /// A value of 0 means no rounding for that corner.
+    ///
+    /// # Arguments
+    /// * `embed_id` - The ID returned from `embed_toplevel_by_pid`
+    /// * `top_left` - Top-left corner radius
+    /// * `top_right` - Top-right corner radius
+    /// * `bottom_right` - Bottom-right corner radius
+    /// * `bottom_left` - Bottom-left corner radius
+    fn set_embed_corner_radius(
+        &self,
+        embed_id: u64,
+        top_left: u32,
+        top_right: u32,
+        bottom_right: u32,
+        bottom_left: u32,
+    ) -> bool;
+
+    /// Set interactivity for an embedded surface.
+    ///
+    /// When interactive, pointer/keyboard/touch events within the embed
+    /// region will be routed to the embedded toplevel.
+    fn set_embed_interactive(&self, embed_id: u64, interactive: bool) -> bool;
+
+    /// Remove an embedded surface.
+    fn remove_embed(&self, embed_id: u64) -> bool;
 }
 
 impl WindowExtWayland for Window {
@@ -135,6 +247,17 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => None,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.xdg_toplevel(),
+        }
+    }
+
+    #[inline]
+    fn wl_surface(&self) -> Option<NonNull<c_void>> {
+        #[allow(clippy::single_match)]
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => None,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.wl_surface_ptr(),
         }
     }
 
@@ -166,6 +289,118 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::Wayland(window) => {
                 window.request_animated_resize_with_position(x, y, width, height, duration_ms)
             },
+        }
+    }
+
+    #[inline]
+    fn embed_toplevel_by_pid(
+        &self,
+        pid: u32,
+        app_id: &str,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        interactive: bool,
+    ) -> Option<u64> {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => None,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.embed_toplevel_by_pid(pid, app_id, x, y, width, height, interactive)
+            },
+        }
+    }
+
+    #[inline]
+    fn set_embed_geometry(
+        &self,
+        embed_id: u64,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.set_embed_geometry(embed_id, x, y, width, height)
+            },
+        }
+    }
+
+    #[inline]
+    fn set_embed_anchor(
+        &self,
+        embed_id: u64,
+        anchor: u32,
+        margin_top: i32,
+        margin_right: i32,
+        margin_bottom: i32,
+        margin_left: i32,
+        width: i32,
+        height: i32,
+    ) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.set_embed_anchor(
+                    embed_id,
+                    anchor,
+                    margin_top,
+                    margin_right,
+                    margin_bottom,
+                    margin_left,
+                    width,
+                    height,
+                )
+            },
+        }
+    }
+
+    #[inline]
+    fn set_embed_corner_radius(
+        &self,
+        embed_id: u64,
+        top_left: u32,
+        top_right: u32,
+        bottom_right: u32,
+        bottom_left: u32,
+    ) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.set_embed_corner_radius(embed_id, top_left, top_right, bottom_right, bottom_left)
+            },
+        }
+    }
+
+    #[inline]
+    fn set_embed_interactive(&self, embed_id: u64, interactive: bool) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.set_embed_interactive(embed_id, interactive)
+            },
+        }
+    }
+
+    #[inline]
+    fn remove_embed(&self, embed_id: u64) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.remove_embed(embed_id),
         }
     }
 }

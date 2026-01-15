@@ -229,6 +229,10 @@ impl Window {
     pub(crate) fn xdg_toplevel(&self) -> Option<NonNull<c_void>> {
         NonNull::new(self.window.xdg_toplevel().id().as_ptr().cast())
     }
+
+    pub(crate) fn wl_surface_ptr(&self) -> Option<NonNull<c_void>> {
+        NonNull::new(self.window.wl_surface().id().as_ptr().cast())
+    }
 }
 
 impl Window {
@@ -450,6 +454,95 @@ impl Window {
             height,
             duration_ms,
         )
+    }
+
+    /// Embed a toplevel by process ID into this window's surface.
+    ///
+    /// Returns an embed ID that can be used to update geometry or remove the embed,
+    /// or `None` if the surface embed protocol is not available.
+    #[inline]
+    pub fn embed_toplevel_by_pid(
+        &self,
+        pid: u32,
+        app_id: &str,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        interactive: bool,
+    ) -> Option<u64> {
+        self.window_state.lock().unwrap().embed_toplevel_by_pid(
+            pid, app_id, x, y, width, height, interactive,
+        )
+    }
+
+    /// Update the geometry of an embedded surface.
+    #[inline]
+    pub fn set_embed_geometry(
+        &self,
+        embed_id: u64,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> bool {
+        self.window_state.lock().unwrap().set_embed_geometry(embed_id, x, y, width, height)
+    }
+
+    /// Set anchor-based positioning for an embedded surface.
+    #[inline]
+    pub fn set_embed_anchor(
+        &self,
+        embed_id: u64,
+        anchor: u32,
+        margin_top: i32,
+        margin_right: i32,
+        margin_bottom: i32,
+        margin_left: i32,
+        width: i32,
+        height: i32,
+    ) -> bool {
+        self.window_state.lock().unwrap().set_embed_anchor(
+            embed_id,
+            anchor,
+            margin_top,
+            margin_right,
+            margin_bottom,
+            margin_left,
+            width,
+            height,
+        )
+    }
+
+    /// Set corner radius for an embedded surface.
+    #[inline]
+    pub fn set_embed_corner_radius(
+        &self,
+        embed_id: u64,
+        top_left: u32,
+        top_right: u32,
+        bottom_right: u32,
+        bottom_left: u32,
+    ) -> bool {
+        self.window_state.lock().unwrap().set_embed_corner_radius(
+            embed_id,
+            top_left,
+            top_right,
+            bottom_right,
+            bottom_left,
+        )
+    }
+
+    /// Set interactivity for an embedded surface.
+    #[inline]
+    pub fn set_embed_interactive(&self, embed_id: u64, interactive: bool) -> bool {
+        self.window_state.lock().unwrap().set_embed_interactive(embed_id, interactive)
+    }
+
+    /// Remove an embedded surface.
+    #[inline]
+    pub fn remove_embed(&self, embed_id: u64) -> bool {
+        self.window_state.lock().unwrap().remove_embed(embed_id)
     }
 
     #[inline]

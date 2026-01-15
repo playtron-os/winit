@@ -37,6 +37,9 @@ use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::wayland::types::cosmic_animated_resize::{
     AnimatedResizeController, CosmicAnimatedResizeManager,
 };
+use crate::platform_impl::wayland::types::cosmic_surface_embed::{
+    CosmicSurfaceEmbedManager, EmbeddedSurface,
+};
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::{PlatformCustomCursor, WindowId};
@@ -153,6 +156,13 @@ pub struct WindowState {
     /// Active animated resize controller for this window.
     animated_resize_controller: Option<AnimatedResizeController>,
 
+    /// COSMIC surface embed manager.
+    surface_embed_manager: Option<CosmicSurfaceEmbedManager>,
+    /// Active embedded surfaces in this window (keyed by a client-provided ID).
+    embedded_surfaces: std::collections::HashMap<u64, EmbeddedSurface>,
+    /// Next embed ID for tracking.
+    next_embed_id: u64,
+
     /// Whether the client side decorations have pending move operations.
     ///
     /// The value is the serial of the event triggered moved.
@@ -195,6 +205,9 @@ impl WindowState {
             blur_manager: winit_state.kwin_blur_manager.clone(),
             animated_resize_manager: winit_state.animated_resize_manager.clone(),
             animated_resize_controller: None,
+            surface_embed_manager: winit_state.surface_embed_manager.clone(),
+            embedded_surfaces: std::collections::HashMap::new(),
+            next_embed_id: 1,
             compositor,
             connection,
             csd_fails: false,
@@ -1173,6 +1186,215 @@ impl WindowState {
         } else {
             false
         }
+    }
+
+    /// Embed a toplevel by process ID into this window's surface.
+    ///
+    /// This requests the compositor to embed the window created by the specified
+    /// process into this window's surface. The compositor will monitor for new
+    /// toplevels from the PID and embed the first matching one.
+    ///
+    /// Returns an embed ID that can be used to set geometry or remove the embed,
+    /// or `None` if the surface embed protocol is not available.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID of the application to embed
+    /// * `app_id` - Optional app_id hint for verification (can be empty)
+    /// * `x` - X position within this window's surface
+    /// * `y` - Y position within this window's surface
+    /// * `width` - Width of the embed region
+    /// * `height` - Height of the embed region
+    /// * `interactive` - Whether input should be routed to the embedded surface
+    pub fn embed_toplevel_by_pid(
+        &mut self,
+        pid: u32,
+        app_id: &str,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        interactive: bool,
+    ) -> Option<u64> {
+        let manager = self.surface_embed_manager.as_ref()?;
+
+        let embedded = manager.embed_toplevel_by_pid(
+            self.window.wl_surface(),
+            pid,
+            app_id,
+            &self.queue_handle,
+        );
+
+        // Set initial geometry if width/height are provided
+        // Skip set_geometry when width=0/height=0 (anchor-based positioning will be used)
+        if width > 0 && height > 0 {
+            embedded.set_geometry(x, y, width, height);
+        }
+        embedded.set_interactive(interactive);
+        embedded.commit();
+
+        let embed_id = self.next_embed_id;
+        self.next_embed_id += 1;
+        self.embedded_surfaces.insert(embed_id, embedded);
+
+        tracing::info!(
+            embed_id,
+            pid,
+            app_id,
+            x,
+            y,
+            width,
+            height,
+            interactive,
+            "Created embed for PID"
+        );
+
+        Some(embed_id)
+    }
+
+    /// Update the geometry of an embedded surface.
+    ///
+    /// # Arguments
+    /// * `embed_id` - The ID returned from `embed_toplevel_by_pid`
+    /// * `x` - X position within this window's surface
+    /// * `y` - Y position within this window's surface
+    /// * `width` - Width of the embed region
+    /// * `height` - Height of the embed region
+    pub fn set_embed_geometry(
+        &mut self,
+        embed_id: u64,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> bool {
+        if let Some(embedded) = self.embedded_surfaces.get(&embed_id) {
+            embedded.set_geometry(x, y, width, height);
+            embedded.commit();
+            tracing::trace!(embed_id, x, y, width, height, "Updated embed geometry");
+            true
+        } else {
+            tracing::warn!(embed_id, "Embed not found for geometry update");
+            false
+        }
+    }
+
+    /// Set anchor-based positioning for an embedded surface.
+    ///
+    /// Instead of specifying absolute (x, y) coordinates, this allows positioning
+    /// relative to the parent window edges. The geometry is automatically
+    /// recalculated by the compositor when the parent window resizes.
+    ///
+    /// # Arguments
+    /// * `embed_id` - The embedded surface ID
+    /// * `anchor` - Bitflags indicating which edges to anchor to (0=none, 1=top, 2=bottom, 4=left, 8=right)
+    /// * `margin_top` - Margin from top edge
+    /// * `margin_right` - Margin from right edge
+    /// * `margin_bottom` - Margin from bottom edge
+    /// * `margin_left` - Margin from left edge
+    /// * `width` - Width of embed region (0 to stretch between left/right anchors)
+    /// * `height` - Height of embed region (0 to stretch between top/bottom anchors)
+    pub fn set_embed_anchor(
+        &mut self,
+        embed_id: u64,
+        anchor: u32,
+        margin_top: i32,
+        margin_right: i32,
+        margin_bottom: i32,
+        margin_left: i32,
+        width: i32,
+        height: i32,
+    ) -> bool {
+        if let Some(embedded) = self.embedded_surfaces.get(&embed_id) {
+            embedded.set_anchor(
+                anchor,
+                margin_top,
+                margin_right,
+                margin_bottom,
+                margin_left,
+                width,
+                height,
+            );
+            embedded.commit();
+            tracing::trace!(
+                embed_id,
+                anchor,
+                margin_top,
+                margin_right,
+                margin_bottom,
+                margin_left,
+                width,
+                height,
+                "Updated embed anchor"
+            );
+            true
+        } else {
+            tracing::warn!(embed_id, "Embed not found for anchor update");
+            false
+        }
+    }
+
+    /// Set corner radius for an embedded surface.
+    ///
+    /// This allows the parent to specify rounded corners that match its own UI.
+    /// Each corner can have a different radius. Values are in logical pixels.
+    pub fn set_embed_corner_radius(
+        &mut self,
+        embed_id: u64,
+        top_left: u32,
+        top_right: u32,
+        bottom_right: u32,
+        bottom_left: u32,
+    ) -> bool {
+        if let Some(embedded) = self.embedded_surfaces.get(&embed_id) {
+            embedded.set_corner_radius(top_left, top_right, bottom_right, bottom_left);
+            embedded.commit();
+            tracing::trace!(
+                embed_id,
+                top_left,
+                top_right,
+                bottom_right,
+                bottom_left,
+                "Updated embed corner radius"
+            );
+            true
+        } else {
+            tracing::warn!(embed_id, "Embed not found for corner radius update");
+            false
+        }
+    }
+
+    /// Set interactivity for an embedded surface.
+    ///
+    /// When interactive, pointer/keyboard/touch events within the embed
+    /// region will be routed to the embedded toplevel.
+    pub fn set_embed_interactive(&mut self, embed_id: u64, interactive: bool) -> bool {
+        if let Some(embedded) = self.embedded_surfaces.get(&embed_id) {
+            embedded.set_interactive(interactive);
+            embedded.commit();
+            tracing::trace!(embed_id, interactive, "Updated embed interactivity");
+            true
+        } else {
+            tracing::warn!(embed_id, "Embed not found for interactive update");
+            false
+        }
+    }
+
+    /// Remove an embedded surface.
+    pub fn remove_embed(&mut self, embed_id: u64) -> bool {
+        if self.embedded_surfaces.remove(&embed_id).is_some() {
+            tracing::info!(embed_id, "Removed embed");
+            true
+        } else {
+            tracing::warn!(embed_id, "Embed not found for removal");
+            false
+        }
+    }
+
+    /// Check if an embedded surface is still valid.
+    pub fn is_embed_valid(&self, embed_id: u64) -> bool {
+        self.embedded_surfaces
+            .get(&embed_id)
+            .is_some_and(|e| e.is_valid())
     }
 
     /// Set the window title to a new value.
