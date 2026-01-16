@@ -132,6 +132,28 @@ pub trait WindowExtWayland {
         duration_ms: u32,
     ) -> bool;
 
+    /// Set exclusive mode for this window using the COSMIC protocol.
+    ///
+    /// When exclusive mode is enabled, all other toplevel windows on the same
+    /// output are minimized by the compositor. When disabled, they are restored.
+    ///
+    /// This is useful for applications that need a clean, focused interface
+    /// without distractions from other windows (e.g., AI assistants, system
+    /// overlays, presentation modes).
+    ///
+    /// Returns `true` if the request was sent, `false` if:
+    /// - The window is not a Wayland window
+    /// - The compositor doesn't support the exclusive mode protocol
+    ///
+    /// # Arguments
+    /// * `exclusive` - `true` to enable exclusive mode, `false` to disable
+    fn set_exclusive_mode(&self, exclusive: bool) -> bool;
+
+    /// Check if exclusive mode is currently enabled for this window.
+    ///
+    /// Returns `true` if exclusive mode is enabled, `false` otherwise.
+    fn is_exclusive_mode(&self) -> bool;
+
     /// Embed a toplevel by process ID into this window's surface.
     ///
     /// This uses the `zcosmic_surface_embed_manager_v1` protocol to embed a
@@ -401,6 +423,26 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.remove_embed(embed_id),
+        }
+    }
+
+    #[inline]
+    fn set_exclusive_mode(&self, exclusive: bool) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.set_exclusive_mode(exclusive),
+        }
+    }
+
+    #[inline]
+    fn is_exclusive_mode(&self) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.is_exclusive_mode(),
         }
     }
 }

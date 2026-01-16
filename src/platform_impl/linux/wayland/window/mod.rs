@@ -456,6 +456,23 @@ impl Window {
         )
     }
 
+    /// Set exclusive mode for this window using the COSMIC protocol.
+    ///
+    /// When exclusive mode is enabled, all other toplevel windows on the same
+    /// output are minimized. When disabled, they are restored.
+    ///
+    /// Returns `true` if the request was sent, `false` if the protocol is not available.
+    #[inline]
+    pub fn set_exclusive_mode(&self, exclusive: bool) -> bool {
+        self.window_state.lock().unwrap().set_exclusive_mode(exclusive)
+    }
+
+    /// Check if exclusive mode is currently enabled for this window.
+    #[inline]
+    pub fn is_exclusive_mode(&self) -> bool {
+        self.window_state.lock().unwrap().is_exclusive_mode()
+    }
+
     /// Embed a toplevel by process ID into this window's surface.
     ///
     /// Returns an embed ID that can be used to update geometry or remove the embed,

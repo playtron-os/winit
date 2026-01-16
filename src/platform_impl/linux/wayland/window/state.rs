@@ -37,6 +37,9 @@ use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::wayland::types::cosmic_animated_resize::{
     AnimatedResizeController, CosmicAnimatedResizeManager,
 };
+use crate::platform_impl::wayland::types::cosmic_exclusive_mode::{
+    CosmicExclusiveModeManager, ExclusiveModeController,
+};
 use crate::platform_impl::wayland::types::cosmic_surface_embed::{
     CosmicSurfaceEmbedManager, EmbeddedSurface,
 };
@@ -156,6 +159,11 @@ pub struct WindowState {
     /// Active animated resize controller for this window.
     animated_resize_controller: Option<AnimatedResizeController>,
 
+    /// COSMIC exclusive mode manager.
+    exclusive_mode_manager: Option<CosmicExclusiveModeManager>,
+    /// Active exclusive mode controller for this window.
+    exclusive_mode_controller: Option<ExclusiveModeController>,
+
     /// COSMIC surface embed manager.
     surface_embed_manager: Option<CosmicSurfaceEmbedManager>,
     /// Active embedded surfaces in this window (keyed by a client-provided ID).
@@ -205,6 +213,8 @@ impl WindowState {
             blur_manager: winit_state.kwin_blur_manager.clone(),
             animated_resize_manager: winit_state.animated_resize_manager.clone(),
             animated_resize_controller: None,
+            exclusive_mode_manager: winit_state.exclusive_mode_manager.clone(),
+            exclusive_mode_controller: None,
             surface_embed_manager: winit_state.surface_embed_manager.clone(),
             embedded_surfaces: std::collections::HashMap::new(),
             next_embed_id: 1,
@@ -1186,6 +1196,47 @@ impl WindowState {
         } else {
             false
         }
+    }
+
+    /// Set exclusive mode for this window.
+    ///
+    /// When exclusive mode is enabled, all other toplevel windows on the same
+    /// output are minimized. When disabled, they are restored.
+    ///
+    /// Returns `true` if the request was sent, `false` if the protocol
+    /// is not available.
+    ///
+    /// # Arguments
+    /// * `exclusive` - `true` to enable exclusive mode, `false` to disable
+    #[inline]
+    pub fn set_exclusive_mode(&mut self, exclusive: bool) -> bool {
+        // Create controller if we don't have one yet
+        if self.exclusive_mode_controller.is_none() {
+            if let Some(manager) = self.exclusive_mode_manager.as_ref() {
+                let controller =
+                    manager.get_exclusive_mode(self.window.wl_surface(), &self.queue_handle);
+                self.exclusive_mode_controller = Some(controller);
+            } else {
+                tracing::trace!("Exclusive mode manager unavailable");
+                return false;
+            }
+        }
+
+        if let Some(controller) = self.exclusive_mode_controller.as_ref() {
+            tracing::trace!(exclusive, "Setting exclusive mode");
+            controller.set_exclusive(exclusive);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if exclusive mode is currently enabled for this window.
+    pub fn is_exclusive_mode(&self) -> bool {
+        self.exclusive_mode_controller
+            .as_ref()
+            .map(|c| c.is_enabled())
+            .unwrap_or(false)
     }
 
     /// Embed a toplevel by process ID into this window's surface.

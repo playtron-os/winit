@@ -30,6 +30,7 @@ use crate::platform_impl::wayland::seat::{
     WinitPointerDataExt, WinitSeatState,
 };
 use crate::platform_impl::wayland::types::cosmic_animated_resize::CosmicAnimatedResizeManager;
+use crate::platform_impl::wayland::types::cosmic_exclusive_mode::CosmicExclusiveModeManager;
 use crate::platform_impl::wayland::types::cosmic_surface_embed::CosmicSurfaceEmbedManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScalingManager;
@@ -114,6 +115,9 @@ pub struct WinitState {
     /// COSMIC animated resize manager.
     pub animated_resize_manager: Option<CosmicAnimatedResizeManager>,
 
+    /// COSMIC exclusive mode manager.
+    pub exclusive_mode_manager: Option<CosmicExclusiveModeManager>,
+
     /// COSMIC surface embed manager.
     pub surface_embed_manager: Option<CosmicSurfaceEmbedManager>,
 
@@ -186,6 +190,7 @@ impl WinitState {
             fractional_scaling_manager,
             kwin_blur_manager: KWinBlurManager::new(globals, queue_handle).ok(),
             animated_resize_manager: CosmicAnimatedResizeManager::new(globals, queue_handle).ok(),
+            exclusive_mode_manager: CosmicExclusiveModeManager::new(globals, queue_handle).ok(),
             surface_embed_manager: CosmicSurfaceEmbedManager::new(globals, queue_handle).ok(),
 
             seats,
