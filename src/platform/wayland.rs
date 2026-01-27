@@ -23,6 +23,13 @@ use crate::window::{Window, WindowAttributes};
 
 pub use crate::window::Theme;
 
+// Re-export voice mode types for the public API
+#[cfg(wayland_platform)]
+pub use crate::platform_impl::wayland::types::cosmic_voice_mode::{
+    OrbState as VoiceModeOrbState,
+    VoiceModeEvent,
+};
+
 /// Additional methods on [`ActiveEventLoop`] that are specific to Wayland.
 pub trait ActiveEventLoopExtWayland {
     /// True if the [`ActiveEventLoop`] uses Wayland.
@@ -258,6 +265,43 @@ pub trait WindowExtWayland {
 
     /// Remove an embedded surface.
     fn remove_embed(&self, embed_id: u64) -> bool;
+
+    /// Register this window as a voice mode receiver.
+    ///
+    /// When registered, this window will receive voice mode events from the compositor
+    /// via `WindowEvent::VoiceMode` when:
+    /// - This window is focused and voice mode activates
+    /// - This is the default receiver and no other receiver is focused
+    ///
+    /// Returns `true` if registration was successful, `false` if:
+    /// - The window is not a Wayland window
+    /// - The compositor doesn't support the voice mode protocol
+    ///
+    /// # Arguments
+    /// * `is_default` - If true, this window becomes the default receiver for when
+    ///   no other registered window is focused.
+    fn register_voice_mode(&self, is_default: bool) -> bool;
+
+    /// Unregister this window as a voice mode receiver.
+    fn unregister_voice_mode(&self) -> bool;
+
+    /// Set the audio level for voice mode visualization.
+    ///
+    /// # Arguments
+    /// * `level` - Audio level from 0-1000, where 0 is silence and 1000 is maximum.
+    fn set_voice_audio_level(&self, level: u32) -> bool;
+
+    /// Acknowledge a will_stop event from the compositor.
+    ///
+    /// This responds to a will_stop event, telling the compositor whether to
+    /// freeze the orb (transcription processing) or proceed with hiding.
+    ///
+    /// # Arguments
+    /// * `serial` - The serial from the will_stop event
+    /// * `freeze` - If true, freeze the orb in place. If false, proceed with hiding.
+    ///
+    /// Returns `true` if successful, `false` if this window is not a voice mode receiver.
+    fn voice_ack_stop(&self, serial: u32, freeze: bool) -> bool;
 }
 
 impl WindowExtWayland for Window {
@@ -443,6 +487,46 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.is_exclusive_mode(),
+        }
+    }
+
+    #[inline]
+    fn register_voice_mode(&self, is_default: bool) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.register_voice_mode(is_default),
+        }
+    }
+
+    #[inline]
+    fn unregister_voice_mode(&self) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.unregister_voice_mode(),
+        }
+    }
+
+    #[inline]
+    fn set_voice_audio_level(&self, level: u32) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.set_voice_audio_level(level),
+        }
+    }
+
+    #[inline]
+    fn voice_ack_stop(&self, serial: u32, freeze: bool) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.voice_ack_stop(serial, freeze),
         }
     }
 }

@@ -448,6 +448,19 @@ impl<T: 'static> EventLoop<T> {
             }
         }
 
+        // Poll voice mode events from all windows and dispatch them
+        self.with_state(|state| {
+            for (&window_id, window) in state.windows.get_mut().iter_mut() {
+                let voice_events = window.lock().unwrap().take_voice_mode_events();
+                for voice_event in voice_events {
+                    buffer_sink.push_window_event(
+                        WindowEvent::VoiceMode(voice_event),
+                        window_id,
+                    );
+                }
+            }
+        });
+
         // Push the events directly from the window.
         self.with_state(|state| {
             buffer_sink.append(&mut state.window_events_sink.lock().unwrap());

@@ -43,6 +43,9 @@ use crate::platform_impl::wayland::types::cosmic_exclusive_mode::{
 use crate::platform_impl::wayland::types::cosmic_surface_embed::{
     CosmicSurfaceEmbedManager, EmbeddedSurface,
 };
+use crate::platform_impl::wayland::types::cosmic_voice_mode::{
+    CosmicVoiceModeManager, VoiceModeReceiver,
+};
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::{PlatformCustomCursor, WindowId};
@@ -171,6 +174,11 @@ pub struct WindowState {
     /// Next embed ID for tracking.
     next_embed_id: u64,
 
+    /// COSMIC voice mode manager.
+    voice_mode_manager: Option<CosmicVoiceModeManager>,
+    /// Active voice mode receiver for this window.
+    voice_mode_receiver: Option<VoiceModeReceiver>,
+
     /// Whether the client side decorations have pending move operations.
     ///
     /// The value is the serial of the event triggered moved.
@@ -218,6 +226,8 @@ impl WindowState {
             surface_embed_manager: winit_state.surface_embed_manager.clone(),
             embedded_surfaces: std::collections::HashMap::new(),
             next_embed_id: 1,
+            voice_mode_manager: winit_state.voice_mode_manager.clone(),
+            voice_mode_receiver: None,
             compositor,
             connection,
             csd_fails: false,
@@ -1237,6 +1247,110 @@ impl WindowState {
             .as_ref()
             .map(|c| c.is_enabled())
             .unwrap_or(false)
+    }
+
+    /// Register this window as a voice mode receiver.
+    ///
+    /// Returns `true` if registration was successful, `false` if the protocol
+    /// is not available.
+    ///
+    /// # Arguments
+    /// * `is_default` - If true, this window becomes the default receiver
+    #[inline]
+    pub fn register_voice_mode(&mut self, is_default: bool) -> bool {
+        // Already registered
+        if self.voice_mode_receiver.is_some() {
+            tracing::trace!("Voice mode already registered for this window");
+            return true;
+        }
+
+        if let Some(manager) = self.voice_mode_manager.as_ref() {
+            let receiver = manager.get_voice_mode(
+                self.window.wl_surface(),
+                is_default,
+                &self.queue_handle,
+            );
+            self.voice_mode_receiver = Some(receiver);
+            tracing::info!(is_default, "Registered window as voice mode receiver");
+            true
+        } else {
+            tracing::trace!("Voice mode manager unavailable");
+            false
+        }
+    }
+
+    /// Unregister this window as a voice mode receiver.
+    #[inline]
+    pub fn unregister_voice_mode(&mut self) -> bool {
+        if let Some(receiver) = self.voice_mode_receiver.take() {
+            receiver.destroy();
+            tracing::info!("Unregistered window as voice mode receiver");
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set the audio level for voice mode visualization.
+    ///
+    /// # Arguments
+    /// * `level` - Audio level from 0-1000, where 0 is silence and 1000 is maximum.
+    #[inline]
+    pub fn set_voice_audio_level(&mut self, level: u32) -> bool {
+        if let Some(receiver) = self.voice_mode_receiver.as_ref() {
+            receiver.set_audio_level(level);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Acknowledge a will_stop event from the compositor.
+    #[inline]
+    pub fn voice_ack_stop(&mut self, serial: u32, freeze: bool) -> bool {
+        if let Some(receiver) = self.voice_mode_receiver.as_ref() {
+            receiver.ack_stop(serial, freeze);
+            tracing::info!(serial, freeze, "Sent ack_stop to compositor");
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Take pending voice mode events from this window's receiver.
+    ///
+    /// Returns a list of events that should be sent as WindowEvent::VoiceMode.
+    pub fn take_voice_mode_events(&self) -> Vec<crate::event::VoiceModeWindowEvent> {
+        use crate::event::{VoiceModeOrbState, VoiceModeWindowEvent};
+        use crate::platform_impl::wayland::types::cosmic_voice_mode::{OrbState, VoiceModeEvent};
+
+        let Some(receiver) = self.voice_mode_receiver.as_ref() else {
+            return Vec::new();
+        };
+
+        receiver
+            .take_events()
+            .into_iter()
+            .map(|event| match event {
+                VoiceModeEvent::Start { orb_state } => {
+                    let orb_state = match orb_state {
+                        OrbState::Hidden => VoiceModeOrbState::Hidden,
+                        OrbState::Floating => VoiceModeOrbState::Floating,
+                        OrbState::Attached => VoiceModeOrbState::Attached,
+                        OrbState::Frozen => VoiceModeOrbState::Frozen,
+                        OrbState::Transitioning => VoiceModeOrbState::Transitioning,
+                    };
+                    VoiceModeWindowEvent::Start { orb_state }
+                }
+                VoiceModeEvent::Stop => VoiceModeWindowEvent::Stop,
+                VoiceModeEvent::Cancel => VoiceModeWindowEvent::Cancel,
+                VoiceModeEvent::OrbAttached { x, y, width, height } => {
+                    VoiceModeWindowEvent::OrbAttached { x, y, width, height }
+                }
+                VoiceModeEvent::OrbDetached => VoiceModeWindowEvent::OrbDetached,
+                VoiceModeEvent::WillStop { serial } => VoiceModeWindowEvent::WillStop { serial },
+            })
+            .collect()
     }
 
     /// Embed a toplevel by process ID into this window's surface.

@@ -32,6 +32,7 @@ use crate::platform_impl::wayland::seat::{
 use crate::platform_impl::wayland::types::cosmic_animated_resize::CosmicAnimatedResizeManager;
 use crate::platform_impl::wayland::types::cosmic_exclusive_mode::CosmicExclusiveModeManager;
 use crate::platform_impl::wayland::types::cosmic_surface_embed::CosmicSurfaceEmbedManager;
+use crate::platform_impl::wayland::types::cosmic_voice_mode::CosmicVoiceModeManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScalingManager;
 use crate::platform_impl::wayland::types::wp_viewporter::ViewporterState;
@@ -121,6 +122,9 @@ pub struct WinitState {
     /// COSMIC surface embed manager.
     pub surface_embed_manager: Option<CosmicSurfaceEmbedManager>,
 
+    /// COSMIC voice mode manager.
+    pub voice_mode_manager: Option<CosmicVoiceModeManager>,
+
     /// Loop handle to re-register event sources, such as keyboard repeat.
     pub loop_handle: LoopHandle<'static, Self>,
 
@@ -192,6 +196,7 @@ impl WinitState {
             animated_resize_manager: CosmicAnimatedResizeManager::new(globals, queue_handle).ok(),
             exclusive_mode_manager: CosmicExclusiveModeManager::new(globals, queue_handle).ok(),
             surface_embed_manager: CosmicSurfaceEmbedManager::new(globals, queue_handle).ok(),
+            voice_mode_manager: CosmicVoiceModeManager::new(globals, queue_handle).ok(),
 
             seats,
             text_input_state: TextInputState::new(globals, queue_handle).ok(),
