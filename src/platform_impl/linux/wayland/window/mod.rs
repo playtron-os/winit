@@ -588,6 +588,12 @@ impl Window {
         self.window_state.lock().unwrap().voice_ack_stop(serial, freeze)
     }
 
+    /// Dismiss the frozen voice orb.
+    #[inline]
+    pub fn voice_dismiss(&self) -> bool {
+        self.window_state.lock().unwrap().voice_dismiss()
+    }
+
     #[inline]
     pub fn set_decorations(&self, decorate: bool) {
         self.window_state.lock().unwrap().set_decorate(decorate)

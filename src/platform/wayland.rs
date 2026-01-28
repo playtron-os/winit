@@ -302,6 +302,14 @@ pub trait WindowExtWayland {
     ///
     /// Returns `true` if successful, `false` if this window is not a voice mode receiver.
     fn voice_ack_stop(&self, serial: u32, freeze: bool) -> bool;
+
+    /// Dismiss the frozen voice orb.
+    ///
+    /// This tells the compositor to hide the orb when transcription completes
+    /// without spawning a new window (e.g., empty result or error).
+    ///
+    /// Returns `true` if successful, `false` if this window is not a voice mode receiver.
+    fn voice_dismiss(&self) -> bool;
 }
 
 impl WindowExtWayland for Window {
@@ -527,6 +535,16 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.voice_ack_stop(serial, freeze),
+        }
+    }
+
+    #[inline]
+    fn voice_dismiss(&self) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.voice_dismiss(),
         }
     }
 }

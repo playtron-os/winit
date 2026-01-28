@@ -4,10 +4,10 @@
 //! The compositor controls the voice mode orb overlay - clients register surfaces
 //! (windows) as receivers and get notified when voice input starts/stops.
 
+use sctk::globals::GlobalData;
 use sctk::reexports::client::globals::{BindError, GlobalList};
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
 use sctk::reexports::client::{delegate_dispatch, Connection, Dispatch, Proxy, QueueHandle};
-use sctk::globals::GlobalData;
 use std::sync::{Arc, Mutex};
 
 use crate::platform_impl::wayland::state::WinitState;
@@ -70,12 +70,7 @@ pub enum VoiceModeEvent {
     /// Voice input cancelled
     Cancel,
     /// Orb attached to this receiver's window
-    OrbAttached {
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
-    },
+    OrbAttached { x: i32, y: i32, width: i32, height: i32 },
     /// Orb detached from this receiver's window
     OrbDetached,
     /// Voice input is about to stop - client must respond with ack_stop
@@ -186,6 +181,15 @@ impl VoiceModeReceiver {
         self.receiver.ack_stop(serial, if freeze { 1 } else { 0 });
     }
 
+    /// Dismiss the frozen orb.
+    ///
+    /// This tells the compositor to hide the orb when transcription completes
+    /// without spawning a new window (e.g., empty result or error).
+    /// Only valid when orb is in frozen state.
+    pub fn dismiss(&self) {
+        self.receiver.dismiss();
+    }
+
     /// Destroy this receiver.
     pub fn destroy(&self) {
         self.receiver.destroy();
@@ -223,40 +227,50 @@ impl Dispatch<ZcosmicVoiceModeV1, Arc<VoiceModeState>, WinitState> for CosmicVoi
         _qhandle: &QueueHandle<WinitState>,
     ) {
         use wayland_client::WEnum;
-        
+
         match event {
             protocol::zcosmic_voice_mode_v1::Event::Start { orb_state } => {
                 let orb_state = match orb_state {
-                    WEnum::Value(protocol::zcosmic_voice_mode_v1::OrbState::Hidden) => OrbState::Hidden,
-                    WEnum::Value(protocol::zcosmic_voice_mode_v1::OrbState::Floating) => OrbState::Floating,
-                    WEnum::Value(protocol::zcosmic_voice_mode_v1::OrbState::Attached) => OrbState::Attached,
-                    WEnum::Value(protocol::zcosmic_voice_mode_v1::OrbState::Frozen) => OrbState::Frozen,
-                    WEnum::Value(protocol::zcosmic_voice_mode_v1::OrbState::Transitioning) => OrbState::Transitioning,
+                    WEnum::Value(protocol::zcosmic_voice_mode_v1::OrbState::Hidden) => {
+                        OrbState::Hidden
+                    },
+                    WEnum::Value(protocol::zcosmic_voice_mode_v1::OrbState::Floating) => {
+                        OrbState::Floating
+                    },
+                    WEnum::Value(protocol::zcosmic_voice_mode_v1::OrbState::Attached) => {
+                        OrbState::Attached
+                    },
+                    WEnum::Value(protocol::zcosmic_voice_mode_v1::OrbState::Frozen) => {
+                        OrbState::Frozen
+                    },
+                    WEnum::Value(protocol::zcosmic_voice_mode_v1::OrbState::Transitioning) => {
+                        OrbState::Transitioning
+                    },
                     _ => OrbState::Hidden,
                 };
                 tracing::debug!(?orb_state, "Voice mode started");
                 data.push_event(VoiceModeEvent::Start { orb_state });
-            }
+            },
             protocol::zcosmic_voice_mode_v1::Event::Stop => {
                 tracing::debug!("Voice mode stopped");
                 data.push_event(VoiceModeEvent::Stop);
-            }
+            },
             protocol::zcosmic_voice_mode_v1::Event::Cancel => {
                 tracing::debug!("Voice mode cancelled");
                 data.push_event(VoiceModeEvent::Cancel);
-            }
+            },
             protocol::zcosmic_voice_mode_v1::Event::OrbAttached { x, y, width, height } => {
                 tracing::debug!(x, y, width, height, "Voice orb attached");
                 data.push_event(VoiceModeEvent::OrbAttached { x, y, width, height });
-            }
+            },
             protocol::zcosmic_voice_mode_v1::Event::OrbDetached => {
                 tracing::debug!("Voice orb detached");
                 data.push_event(VoiceModeEvent::OrbDetached);
-            }
+            },
             protocol::zcosmic_voice_mode_v1::Event::WillStop { serial } => {
                 tracing::debug!(serial, "Voice mode will_stop received");
                 data.push_event(VoiceModeEvent::WillStop { serial });
-            }
+            },
         }
     }
 }

@@ -1243,10 +1243,7 @@ impl WindowState {
 
     /// Check if exclusive mode is currently enabled for this window.
     pub fn is_exclusive_mode(&self) -> bool {
-        self.exclusive_mode_controller
-            .as_ref()
-            .map(|c| c.is_enabled())
-            .unwrap_or(false)
+        self.exclusive_mode_controller.as_ref().map(|c| c.is_enabled()).unwrap_or(false)
     }
 
     /// Register this window as a voice mode receiver.
@@ -1265,11 +1262,8 @@ impl WindowState {
         }
 
         if let Some(manager) = self.voice_mode_manager.as_ref() {
-            let receiver = manager.get_voice_mode(
-                self.window.wl_surface(),
-                is_default,
-                &self.queue_handle,
-            );
+            let receiver =
+                manager.get_voice_mode(self.window.wl_surface(), is_default, &self.queue_handle);
             self.voice_mode_receiver = Some(receiver);
             tracing::info!(is_default, "Registered window as voice mode receiver");
             true
@@ -1317,6 +1311,21 @@ impl WindowState {
         }
     }
 
+    /// Dismiss the frozen voice orb.
+    ///
+    /// This tells the compositor to hide the orb when transcription completes
+    /// without spawning a new window (e.g., empty result or error).
+    #[inline]
+    pub fn voice_dismiss(&mut self) -> bool {
+        if let Some(receiver) = self.voice_mode_receiver.as_ref() {
+            receiver.dismiss();
+            tracing::info!("Sent dismiss to compositor");
+            true
+        } else {
+            false
+        }
+    }
+
     /// Take pending voice mode events from this window's receiver.
     ///
     /// Returns a list of events that should be sent as WindowEvent::VoiceMode.
@@ -1341,12 +1350,12 @@ impl WindowState {
                         OrbState::Transitioning => VoiceModeOrbState::Transitioning,
                     };
                     VoiceModeWindowEvent::Start { orb_state }
-                }
+                },
                 VoiceModeEvent::Stop => VoiceModeWindowEvent::Stop,
                 VoiceModeEvent::Cancel => VoiceModeWindowEvent::Cancel,
                 VoiceModeEvent::OrbAttached { x, y, width, height } => {
                     VoiceModeWindowEvent::OrbAttached { x, y, width, height }
-                }
+                },
                 VoiceModeEvent::OrbDetached => VoiceModeWindowEvent::OrbDetached,
                 VoiceModeEvent::WillStop { serial } => VoiceModeWindowEvent::WillStop { serial },
             })
@@ -1557,9 +1566,7 @@ impl WindowState {
 
     /// Check if an embedded surface is still valid.
     pub fn is_embed_valid(&self, embed_id: u64) -> bool {
-        self.embedded_surfaces
-            .get(&embed_id)
-            .is_some_and(|e| e.is_valid())
+        self.embedded_surfaces.get(&embed_id).is_some_and(|e| e.is_valid())
     }
 
     /// Set the window title to a new value.
