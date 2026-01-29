@@ -219,7 +219,7 @@ impl Dispatch<ZcosmicVoiceModeManagerV1, GlobalData, WinitState> for CosmicVoice
 
 impl Dispatch<ZcosmicVoiceModeV1, Arc<VoiceModeState>, WinitState> for CosmicVoiceModeManager {
     fn event(
-        _state: &mut WinitState,
+        state: &mut WinitState,
         _proxy: &ZcosmicVoiceModeV1,
         event: <ZcosmicVoiceModeV1 as Proxy>::Event,
         data: &Arc<VoiceModeState>,
@@ -227,6 +227,9 @@ impl Dispatch<ZcosmicVoiceModeV1, Arc<VoiceModeState>, WinitState> for CosmicVoi
         _qhandle: &QueueHandle<WinitState>,
     ) {
         use wayland_client::WEnum;
+
+        // Mark that we have events to dispatch so the event loop wakes up
+        state.dispatched_events = true;
 
         match event {
             protocol::zcosmic_voice_mode_v1::Event::Start { orb_state } => {
