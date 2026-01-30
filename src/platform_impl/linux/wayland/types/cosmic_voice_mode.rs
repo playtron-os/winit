@@ -77,7 +77,9 @@ pub enum VoiceModeEvent {
     WillStop {
         /// Serial to echo back in ack_stop
         serial: u32,
-    },
+        },
+    /// Focus the input field (sent on tap)
+    FocusInput,
 }
 
 /// Shared state for voice mode events
@@ -273,6 +275,10 @@ impl Dispatch<ZcosmicVoiceModeV1, Arc<VoiceModeState>, WinitState> for CosmicVoi
             protocol::zcosmic_voice_mode_v1::Event::WillStop { serial } => {
                 tracing::debug!(serial, "Voice mode will_stop received");
                 data.push_event(VoiceModeEvent::WillStop { serial });
+            },
+            protocol::zcosmic_voice_mode_v1::Event::FocusInput => {
+                tracing::debug!("Voice mode focus_input received");
+                data.push_event(VoiceModeEvent::FocusInput);
             },
         }
     }

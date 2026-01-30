@@ -102,6 +102,11 @@ pub enum VoiceModeWindowEvent {
         /// Serial to echo back in ack_stop
         serial: u32,
     },
+    /// Focus the input field.
+    ///
+    /// Sent when the user tapped the voice key (short press without holding).
+    /// The client should focus its text input field so the user can start typing.
+    FocusInput,
 }
 
 /// Describes a generic event.

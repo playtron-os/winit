@@ -64,6 +64,18 @@
       <arg name="surface" type="object" interface="wl_surface"/>
       <arg name="is_default" type="uint" summary="1 to be default receiver, 0 for window-specific"/>
     </request>
+
+    <event name="focus_input">
+      <description summary="focus text input (tap without hold)">
+        Sent when the user tapped the voice key without holding it.
+        The key was pressed and released quickly (less than 300ms),
+        indicating the user wants to focus the text input field
+        rather than activate voice mode.
+
+        The client should focus its text input widget so the user
+        can start typing immediately.
+      </description>
+    </event>
   </interface>
 
   <interface name="zcosmic_voice_mode_v1" version="1">
@@ -184,6 +196,18 @@
         The serial must be echoed back in the ack_stop request.
       </description>
       <arg name="serial" type="uint" summary="serial for ack_stop"/>
+    </event>
+
+    <event name="focus_input">
+      <description summary="focus text input (tap without hold)">
+        Sent when the user tapped the voice key without holding it.
+        The key was pressed and released quickly (less than 300ms),
+        indicating the user wants to focus the text input field
+        rather than activate voice mode.
+
+        The client should focus its text input widget so the user
+        can start typing immediately.
+      </description>
     </event>
   </interface>
 </protocol>

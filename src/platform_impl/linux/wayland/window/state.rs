@@ -1358,6 +1358,7 @@ impl WindowState {
                 },
                 VoiceModeEvent::OrbDetached => VoiceModeWindowEvent::OrbDetached,
                 VoiceModeEvent::WillStop { serial } => VoiceModeWindowEvent::WillStop { serial },
+                VoiceModeEvent::FocusInput => VoiceModeWindowEvent::FocusInput,
             })
             .collect()
     }
