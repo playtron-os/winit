@@ -37,6 +37,9 @@ use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::wayland::types::cosmic_animated_resize::{
     AnimatedResizeController, CosmicAnimatedResizeManager,
 };
+use crate::platform_impl::wayland::types::cosmic_corner_radius::{
+    CosmicCornerRadiusManager, CornerRadiusController,
+};
 use crate::platform_impl::wayland::types::cosmic_exclusive_mode::{
     CosmicExclusiveModeManager, ExclusiveModeController,
 };
@@ -162,6 +165,11 @@ pub struct WindowState {
     /// Active animated resize controller for this window.
     animated_resize_controller: Option<AnimatedResizeController>,
 
+    /// COSMIC corner radius manager.
+    corner_radius_manager: Option<CosmicCornerRadiusManager>,
+    /// Active corner radius controller for this window.
+    corner_radius_controller: Option<CornerRadiusController>,
+
     /// COSMIC exclusive mode manager.
     exclusive_mode_manager: Option<CosmicExclusiveModeManager>,
     /// Active exclusive mode controller for this window.
@@ -221,6 +229,8 @@ impl WindowState {
             blur_manager: winit_state.kwin_blur_manager.clone(),
             animated_resize_manager: winit_state.animated_resize_manager.clone(),
             animated_resize_controller: None,
+            corner_radius_manager: winit_state.corner_radius_manager.clone(),
+            corner_radius_controller: None,
             exclusive_mode_manager: winit_state.exclusive_mode_manager.clone(),
             exclusive_mode_controller: None,
             surface_embed_manager: winit_state.surface_embed_manager.clone(),
@@ -1244,6 +1254,36 @@ impl WindowState {
     /// Check if exclusive mode is currently enabled for this window.
     pub fn is_exclusive_mode(&self) -> bool {
         self.exclusive_mode_controller.as_ref().map(|c| c.is_enabled()).unwrap_or(false)
+    }
+
+    /// Set corner radius for this window.
+    ///
+    /// Communicates the corner radius hint to the compositor so it can
+    /// draw proper blur outlines and rounded corners.
+    ///
+    /// Returns `true` if the request was sent, `false` if the protocol
+    /// is not available.
+    #[inline]
+    pub fn set_corner_radius(&mut self, top_left: u32, top_right: u32, bottom_right: u32, bottom_left: u32) -> bool {
+        // Create controller if we don't have one yet
+        if self.corner_radius_controller.is_none() {
+            if let Some(manager) = self.corner_radius_manager.as_ref() {
+                let controller =
+                    manager.get_corner_radius(self.window.wl_surface(), &self.queue_handle);
+                self.corner_radius_controller = Some(controller);
+            } else {
+                tracing::trace!("Corner radius manager unavailable");
+                return false;
+            }
+        }
+
+        if let Some(controller) = self.corner_radius_controller.as_ref() {
+            tracing::trace!(top_left, top_right, bottom_right, bottom_left, "Setting corner radius");
+            controller.set_radius(top_left, top_right, bottom_right, bottom_left);
+            true
+        } else {
+            false
+        }
     }
 
     /// Register this window as a voice mode receiver.

@@ -161,6 +161,22 @@ pub trait WindowExtWayland {
     /// Returns `true` if exclusive mode is enabled, `false` otherwise.
     fn is_exclusive_mode(&self) -> bool;
 
+    /// Set corner radius for this window using the COSMIC protocol.
+    ///
+    /// Communicates the corner radius hint to the compositor so it can
+    /// draw proper blur outlines and apply rounded corners to the window.
+    ///
+    /// Returns `true` if the request was sent, `false` if:
+    /// - The window is not a Wayland window
+    /// - The compositor doesn't support the corner radius protocol
+    ///
+    /// # Arguments
+    /// * `top_left` - Top-left corner radius in logical pixels
+    /// * `top_right` - Top-right corner radius in logical pixels
+    /// * `bottom_right` - Bottom-right corner radius in logical pixels
+    /// * `bottom_left` - Bottom-left corner radius in logical pixels
+    fn set_corner_radius(&self, top_left: u32, top_right: u32, bottom_right: u32, bottom_left: u32) -> bool;
+
     /// Embed a toplevel by process ID into this window's surface.
     ///
     /// This uses the `zcosmic_surface_embed_manager_v1` protocol to embed a
@@ -495,6 +511,16 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.is_exclusive_mode(),
+        }
+    }
+
+    #[inline]
+    fn set_corner_radius(&self, top_left: u32, top_right: u32, bottom_right: u32, bottom_left: u32) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.set_corner_radius(top_left, top_right, bottom_right, bottom_left),
         }
     }
 

@@ -473,6 +473,17 @@ impl Window {
         self.window_state.lock().unwrap().is_exclusive_mode()
     }
 
+    /// Set corner radius for this window using the COSMIC protocol.
+    ///
+    /// Communicates the corner radius hint to the compositor so it can
+    /// draw proper blur outlines and rounded corners.
+    ///
+    /// Returns `true` if the request was sent, `false` if the protocol is not available.
+    #[inline]
+    pub fn set_corner_radius(&self, top_left: u32, top_right: u32, bottom_right: u32, bottom_left: u32) -> bool {
+        self.window_state.lock().unwrap().set_corner_radius(top_left, top_right, bottom_right, bottom_left)
+    }
+
     /// Embed a toplevel by process ID into this window's surface.
     ///
     /// Returns an embed ID that can be used to update geometry or remove the embed,
