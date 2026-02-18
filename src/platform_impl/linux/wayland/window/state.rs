@@ -40,6 +40,9 @@ use crate::platform_impl::wayland::types::cosmic_animated_resize::{
 use crate::platform_impl::wayland::types::cosmic_corner_radius::{
     CosmicCornerRadiusManager, CornerRadiusController,
 };
+use crate::platform_impl::wayland::types::cosmic_backdrop_color::{
+    CosmicBackdropColorManager, BackdropColorController,
+};
 use crate::platform_impl::wayland::types::cosmic_exclusive_mode::{
     CosmicExclusiveModeManager, ExclusiveModeController,
 };
@@ -170,6 +173,11 @@ pub struct WindowState {
     /// Active corner radius controller for this window.
     corner_radius_controller: Option<CornerRadiusController>,
 
+    /// COSMIC backdrop color manager.
+    backdrop_color_manager: Option<CosmicBackdropColorManager>,
+    /// Active backdrop color controller for this window.
+    backdrop_color_controller: Option<BackdropColorController>,
+
     /// COSMIC exclusive mode manager.
     exclusive_mode_manager: Option<CosmicExclusiveModeManager>,
     /// Active exclusive mode controller for this window.
@@ -231,6 +239,8 @@ impl WindowState {
             animated_resize_controller: None,
             corner_radius_manager: winit_state.corner_radius_manager.clone(),
             corner_radius_controller: None,
+            backdrop_color_manager: winit_state.backdrop_color_manager.clone(),
+            backdrop_color_controller: None,
             exclusive_mode_manager: winit_state.exclusive_mode_manager.clone(),
             exclusive_mode_controller: None,
             surface_embed_manager: winit_state.surface_embed_manager.clone(),
@@ -1280,6 +1290,32 @@ impl WindowState {
         if let Some(controller) = self.corner_radius_controller.as_ref() {
             tracing::trace!(top_left, top_right, bottom_right, bottom_left, "Setting corner radius");
             controller.set_radius(top_left, top_right, bottom_right, bottom_left);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set the compositor-rendered backdrop color for this window.
+    ///
+    /// Returns `true` if the request was sent, `false` if the protocol
+    /// is not available.
+    #[inline]
+    pub fn set_backdrop_color(&mut self, r: u32, g: u32, b: u32, a: u32) -> bool {
+        if self.backdrop_color_controller.is_none() {
+            if let Some(manager) = self.backdrop_color_manager.as_ref() {
+                let controller =
+                    manager.get_backdrop_color(self.window.wl_surface(), &self.queue_handle);
+                self.backdrop_color_controller = Some(controller);
+            } else {
+                tracing::trace!("Backdrop color manager unavailable");
+                return false;
+            }
+        }
+
+        if let Some(controller) = self.backdrop_color_controller.as_ref() {
+            tracing::trace!(r, g, b, a, "Setting backdrop color");
+            controller.set_color(r, g, b, a);
             true
         } else {
             false

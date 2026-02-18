@@ -30,6 +30,7 @@ use crate::platform_impl::wayland::seat::{
     WinitPointerDataExt, WinitSeatState,
 };
 use crate::platform_impl::wayland::types::cosmic_animated_resize::CosmicAnimatedResizeManager;
+use crate::platform_impl::wayland::types::cosmic_backdrop_color::CosmicBackdropColorManager;
 use crate::platform_impl::wayland::types::cosmic_corner_radius::CosmicCornerRadiusManager;
 use crate::platform_impl::wayland::types::cosmic_exclusive_mode::CosmicExclusiveModeManager;
 use crate::platform_impl::wayland::types::cosmic_surface_embed::CosmicSurfaceEmbedManager;
@@ -120,6 +121,9 @@ pub struct WinitState {
     /// COSMIC corner radius manager.
     pub corner_radius_manager: Option<CosmicCornerRadiusManager>,
 
+    /// COSMIC backdrop color manager.
+    pub backdrop_color_manager: Option<CosmicBackdropColorManager>,
+
     /// COSMIC exclusive mode manager.
     pub exclusive_mode_manager: Option<CosmicExclusiveModeManager>,
 
@@ -199,6 +203,7 @@ impl WinitState {
             kwin_blur_manager: KWinBlurManager::new(globals, queue_handle).ok(),
             animated_resize_manager: CosmicAnimatedResizeManager::new(globals, queue_handle).ok(),
             corner_radius_manager: CosmicCornerRadiusManager::new(globals, queue_handle).ok(),
+            backdrop_color_manager: CosmicBackdropColorManager::new(globals, queue_handle).ok(),
             exclusive_mode_manager: CosmicExclusiveModeManager::new(globals, queue_handle).ok(),
             surface_embed_manager: CosmicSurfaceEmbedManager::new(globals, queue_handle).ok(),
             voice_mode_manager: CosmicVoiceModeManager::new(globals, queue_handle).ok(),

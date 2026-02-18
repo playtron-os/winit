@@ -177,6 +177,16 @@ pub trait WindowExtWayland {
     /// * `bottom_left` - Bottom-left corner radius in logical pixels
     fn set_corner_radius(&self, top_left: u32, top_right: u32, bottom_right: u32, bottom_left: u32) -> bool;
 
+    /// Set the compositor-rendered backdrop color for this window.
+    ///
+    /// The compositor will render a colored rectangle behind the window content,
+    /// using the window's corner radius. RGBA components are in the range 0-255.
+    ///
+    /// Returns `false` if:
+    /// - The window is not a Wayland window
+    /// - The compositor doesn't support the backdrop color protocol
+    fn set_backdrop_color(&self, r: u32, g: u32, b: u32, a: u32) -> bool;
+
     /// Embed a toplevel by process ID into this window's surface.
     ///
     /// This uses the `zcosmic_surface_embed_manager_v1` protocol to embed a
@@ -521,6 +531,16 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.set_corner_radius(top_left, top_right, bottom_right, bottom_left),
+        }
+    }
+
+    #[inline]
+    fn set_backdrop_color(&self, r: u32, g: u32, b: u32, a: u32) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.set_backdrop_color(r, g, b, a),
         }
     }
 

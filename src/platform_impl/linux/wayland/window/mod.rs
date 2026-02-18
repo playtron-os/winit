@@ -484,6 +484,14 @@ impl Window {
         self.window_state.lock().unwrap().set_corner_radius(top_left, top_right, bottom_right, bottom_left)
     }
 
+    /// Set the compositor-rendered backdrop color for this window.
+    ///
+    /// Returns `true` if the request was sent, `false` if the protocol is not available.
+    #[inline]
+    pub fn set_backdrop_color(&self, r: u32, g: u32, b: u32, a: u32) -> bool {
+        self.window_state.lock().unwrap().set_backdrop_color(r, g, b, a)
+    }
+
     /// Embed a toplevel by process ID into this window's surface.
     ///
     /// Returns an embed ID that can be used to update geometry or remove the embed,
