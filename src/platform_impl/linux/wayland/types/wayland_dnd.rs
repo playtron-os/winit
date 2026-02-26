@@ -57,6 +57,9 @@ pub struct DndSourceData {
 pub struct SharedDndOfferState {
     /// The current drag offer, if any.
     pub current_offer: Option<WlDataOffer>,
+    /// Pending data received from a request_data call.
+    /// The event loop will drain this and emit DataReceived events.
+    pub pending_data: Vec<(String, Vec<u8>)>,
 }
 
 /// Shared mutable state for the current DnD session.

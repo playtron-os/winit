@@ -666,6 +666,12 @@ impl Window {
         self.window_state.lock().unwrap().dnd_finish()
     }
 
+    /// Request data from the current DnD offer for the specified MIME type.
+    #[inline]
+    pub fn dnd_request_data(&self, mime_type: &str) {
+        self.window_state.lock().unwrap().dnd_request_data(mime_type)
+    }
+
     #[inline]
     pub fn set_decorations(&self, decorate: bool) {
         self.window_state.lock().unwrap().set_decorate(decorate)

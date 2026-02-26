@@ -23,7 +23,7 @@ use tracing::warn;
 use crate::cursor::OnlyCursorImage;
 use crate::dpi::LogicalSize;
 use crate::error::{EventLoopError, OsError as RootOsError};
-use crate::event::{Event, InnerSizeWriter, StartCause, WindowEvent};
+use crate::event::{DndWindowEvent, Event, InnerSizeWriter, StartCause, WindowEvent};
 use crate::event_loop::{ActiveEventLoop as RootActiveEventLoop, ControlFlow, DeviceEvents};
 use crate::platform::pump_events::PumpStatus;
 use crate::platform_impl::platform::min_timeout;
@@ -457,6 +457,28 @@ impl<T: 'static> EventLoop<T> {
                         WindowEvent::VoiceMode(voice_event),
                         window_id,
                     );
+                }
+            }
+        });
+
+        // Drain pending DnD data and dispatch as DataReceived events
+        self.with_state(|state| {
+            let mut guard = state.dnd_session.shared_offer.lock().unwrap();
+            let pending: Vec<_> = guard.pending_data.drain(..).collect();
+            drop(guard);
+
+            if !pending.is_empty() {
+                // Send to the focused window, or first window as fallback
+                let target_window = state.dnd_session.focused_window
+                    .or_else(|| state.windows.borrow().keys().next().copied());
+
+                if let Some(wid) = target_window {
+                    for (mime_type, data) in pending {
+                        buffer_sink.push_window_event(
+                            WindowEvent::Dnd(DndWindowEvent::DataReceived { mime_type, data }),
+                            wid,
+                        );
+                    }
                 }
             }
         });

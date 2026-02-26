@@ -1866,6 +1866,57 @@ impl WindowState {
         }
     }
 
+    /// Request data from the current DnD offer for the specified MIME type.
+    ///
+    /// The data will be stored in `SharedDndOfferState::pending_data` for the
+    /// event loop to pick up and dispatch as `DndWindowEvent::DataReceived`.
+    pub fn dnd_request_data(&self, mime_type: &str) {
+        use std::io::Read;
+        use std::os::fd::AsFd;
+
+        let mut guard = self.dnd_shared_offer.lock().unwrap();
+        let Some(offer) = guard.current_offer.as_ref() else {
+            tracing::warn!("DnD: request_data called with no current offer");
+            return;
+        };
+
+        // Create a pipe for the data transfer
+        let (read_fd, write_fd) = match rustix::pipe::pipe() {
+            Ok(fds) => fds,
+            Err(e) => {
+                tracing::error!(?e, "DnD: failed to create pipe for receive");
+                return;
+            }
+        };
+
+        tracing::trace!(?mime_type, "DnD: requesting data via receive");
+
+        // Tell the source to write data to our pipe
+        offer.receive(mime_type.to_string(), write_fd.as_fd());
+
+        // Drop the write end so we get EOF when the source is done writing
+        drop(write_fd);
+
+        // We need to flush the Wayland connection so the source receives the request
+        let _ = self.connection.flush();
+
+        // Read the data from the pipe
+        let mut read_file = std::fs::File::from(read_fd);
+        let mut data = Vec::new();
+
+        // Read with a reasonable buffer - the source should have written by now
+        // after we flushed and the compositor forwarded the request
+        if let Err(e) = read_file.read_to_end(&mut data) {
+            tracing::error!(?e, "DnD: failed to read data from pipe");
+            return;
+        }
+
+        tracing::trace!(mime_type, bytes = data.len(), "DnD: received data");
+
+        // Store the data for the event loop to dispatch
+        guard.pending_data.push((mime_type.to_string(), data));
+    }
+
     /// Set the window title to a new value.
     ///
     /// This will automatically truncate the title to something meaningful.

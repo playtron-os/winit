@@ -381,6 +381,17 @@ pub trait WindowExtWayland {
     /// Call this after processing `DndWindowEvent::Drop` to tell the source
     /// the transfer is complete. Required for the drag to finalize properly.
     fn dnd_finish(&self);
+
+    /// Request data from the current DnD offer for the specified MIME type.
+    ///
+    /// Call this after receiving `DndWindowEvent::Drop` to retrieve the actual
+    /// data from the drag source. The data will be delivered via a
+    /// `DndWindowEvent::DataReceived` event.
+    ///
+    /// # Arguments
+    /// * `mime_type` - The MIME type to request (must be one of the types
+    ///   offered in the `DndWindowEvent::Enter` event).
+    fn dnd_request_data(&self, mime_type: &str);
 }
 
 impl WindowExtWayland for Window {
@@ -692,6 +703,18 @@ impl WindowExtWayland for Window {
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => {
                 window.dnd_finish();
+            },
+        }
+    }
+
+    #[inline]
+    fn dnd_request_data(&self, mime_type: &str) {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => {},
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.dnd_request_data(mime_type);
             },
         }
     }
