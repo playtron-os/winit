@@ -37,11 +37,11 @@ use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::wayland::types::cosmic_animated_resize::{
     AnimatedResizeController, CosmicAnimatedResizeManager,
 };
-use crate::platform_impl::wayland::types::cosmic_corner_radius::{
-    CosmicCornerRadiusManager, CornerRadiusController,
-};
 use crate::platform_impl::wayland::types::cosmic_backdrop_color::{
-    CosmicBackdropColorManager, BackdropColorController,
+    BackdropColorController, CosmicBackdropColorManager,
+};
+use crate::platform_impl::wayland::types::cosmic_corner_radius::{
+    CornerRadiusController, CosmicCornerRadiusManager,
 };
 use crate::platform_impl::wayland::types::cosmic_exclusive_mode::{
     CosmicExclusiveModeManager, ExclusiveModeController,
@@ -54,6 +54,7 @@ use crate::platform_impl::wayland::types::cosmic_voice_mode::{
 };
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
+use crate::platform_impl::wayland::types::wayland_dnd::WaylandDndManager;
 use crate::platform_impl::{PlatformCustomCursor, WindowId};
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
 
@@ -195,6 +196,15 @@ pub struct WindowState {
     /// Active voice mode receiver for this window.
     voice_mode_receiver: Option<VoiceModeReceiver>,
 
+    /// Wayland DnD manager (cloned from WinitState).
+    dnd_manager: Option<WaylandDndManager>,
+    /// Per-seat data devices for DnD (cloned from WinitState).
+    dnd_data_devices: Vec<sctk::reexports::client::protocol::wl_data_device::WlDataDevice>,
+    /// The icon surface + backing buffer for the current drag.
+    /// Both must stay alive while the drag is active.
+    dnd_icon:
+        Option<(sctk::reexports::client::protocol::wl_surface::WlSurface, sctk::shm::slot::Buffer)>,
+
     /// Whether the client side decorations have pending move operations.
     ///
     /// The value is the serial of the event triggered moved.
@@ -248,6 +258,9 @@ impl WindowState {
             next_embed_id: 1,
             voice_mode_manager: winit_state.voice_mode_manager.clone(),
             voice_mode_receiver: None,
+            dnd_manager: winit_state.dnd_manager.clone(),
+            dnd_data_devices: winit_state.dnd_data_devices.clone(),
+            dnd_icon: None,
             compositor,
             connection,
             csd_fails: false,
@@ -1274,7 +1287,13 @@ impl WindowState {
     /// Returns `true` if the request was sent, `false` if the protocol
     /// is not available.
     #[inline]
-    pub fn set_corner_radius(&mut self, top_left: u32, top_right: u32, bottom_right: u32, bottom_left: u32) -> bool {
+    pub fn set_corner_radius(
+        &mut self,
+        top_left: u32,
+        top_right: u32,
+        bottom_right: u32,
+        bottom_left: u32,
+    ) -> bool {
         // Create controller if we don't have one yet
         if self.corner_radius_controller.is_none() {
             if let Some(manager) = self.corner_radius_manager.as_ref() {
@@ -1288,7 +1307,13 @@ impl WindowState {
         }
 
         if let Some(controller) = self.corner_radius_controller.as_ref() {
-            tracing::trace!(top_left, top_right, bottom_right, bottom_left, "Setting corner radius");
+            tracing::trace!(
+                top_left,
+                top_right,
+                bottom_right,
+                bottom_left,
+                "Setting corner radius"
+            );
             controller.set_radius(top_left, top_right, bottom_right, bottom_left);
             true
         } else {
@@ -1644,6 +1669,133 @@ impl WindowState {
     /// Check if an embedded surface is still valid.
     pub fn is_embed_valid(&self, embed_id: u64) -> bool {
         self.embedded_surfaces.get(&embed_id).is_some_and(|e| e.is_valid())
+    }
+
+    /// Start a Wayland drag-and-drop operation from this window.
+    ///
+    /// Creates a `wl_data_source` with the given MIME types and actions,
+    /// stores the pre-serialized data for `send` events, and calls
+    /// `wl_data_device.start_drag(…)` with the latest pointer serial.
+    ///
+    /// Returns `true` if the drag was started, `false` if DnD is unavailable
+    /// or no pointer serial is available.
+    ///
+    /// `icon_pixels` is `(width, height, pixels, buffer_scale)` for HiDPI support.
+    pub fn start_drag(
+        &mut self,
+        mime_types: Vec<String>,
+        actions: u32,
+        data: Vec<Vec<u8>>,
+        icon_pixels: Option<(u32, u32, Vec<u8>, i32)>,
+    ) -> (bool, Vec<String>, Vec<Vec<u8>>) {
+        use crate::platform_impl::wayland::types::wayland_dnd::DndSourceData;
+
+        let dnd_manager = match self.dnd_manager.as_ref() {
+            Some(m) => m,
+            None => {
+                tracing::error!("DnD manager unavailable, cannot start drag");
+                return (false, mime_types, data);
+            },
+        };
+
+        let data_device = match self.dnd_data_devices.first() {
+            Some(d) => d.clone(),
+            None => {
+                tracing::error!("No data device available, cannot start drag");
+                return (false, mime_types, data);
+            },
+        };
+
+        // Get the latest pointer serial.
+        let serial = self
+            .pointers
+            .iter()
+            .filter_map(|p| p.upgrade())
+            .map(|p| p.pointer().winit_data().latest_button_serial())
+            .find(|&s| s != 0);
+
+        let serial = match serial {
+            Some(s) => s,
+            None => {
+                tracing::error!("No pointer serial available for DnD start_drag");
+                return (false, mime_types, data);
+            },
+        };
+
+        // Get the seat from the first pointer.
+        let seat = self
+            .pointers
+            .iter()
+            .filter_map(|p| p.upgrade())
+            .map(|p| p.pointer().winit_data().seat().clone())
+            .next();
+
+        let _seat = match seat {
+            Some(s) => s,
+            None => {
+                tracing::error!("No seat available for DnD start_drag");
+                return (false, mime_types, data);
+            },
+        };
+
+        // Create the data source with pre-serialized payload as user_data.
+        let payload = DndSourceData { mime_types: mime_types.clone(), data: data.clone() };
+        let source = dnd_manager.create_data_source(&self.queue_handle, payload);
+
+        // Offer MIME types.
+        for mime in &mime_types {
+            source.offer(mime.clone());
+        }
+
+        // Set DnD actions on the source.
+        use wayland_client::protocol::wl_data_device_manager::DndAction;
+        let mut wl_actions = DndAction::empty();
+        if actions & 1 != 0 {
+            wl_actions |= DndAction::Copy;
+        }
+        if actions & 2 != 0 {
+            wl_actions |= DndAction::Move;
+        }
+        if actions & 4 != 0 {
+            wl_actions |= DndAction::Ask;
+        }
+        source.set_actions(wl_actions);
+
+        // Create the icon surface for the drag visual.
+        // If the caller provided custom ARGB pixels, use those; otherwise
+        // fall back to a generic 48×48 semi-transparent rounded rectangle.
+        let icon = {
+            let mut pool = self.custom_cursor_pool.lock().unwrap();
+            if let Some((w, h, pixels, scale)) = icon_pixels {
+                crate::platform_impl::wayland::types::wayland_dnd::create_dnd_icon_from_pixels(
+                    &self.compositor,
+                    &mut pool,
+                    &self.queue_handle,
+                    w,
+                    h,
+                    &pixels,
+                    scale,
+                )
+            } else {
+                crate::platform_impl::wayland::types::wayland_dnd::create_dnd_icon_surface(
+                    &self.compositor,
+                    &mut pool,
+                    &self.queue_handle,
+                )
+            }
+        };
+        let icon_surface_ref = icon.as_ref().map(|(s, _)| s);
+
+        let origin = self.window.wl_surface();
+        data_device.start_drag(Some(&source), origin, icon_surface_ref, serial);
+
+        // Keep icon surface + buffer alive for the drag duration.
+        self.dnd_icon = icon;
+
+        tracing::trace!(serial, ?mime_types, "DnD: started drag from window");
+
+        // Return the source info so the caller can store it in WinitState's dnd_session.
+        (true, mime_types, data)
     }
 
     /// Set the window title to a new value.

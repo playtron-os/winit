@@ -54,6 +54,60 @@ use crate::platform_impl;
 use crate::window::Window;
 use crate::window::{ActivationToken, Theme, WindowId};
 
+/// Actions supported during a drag-and-drop operation.
+///
+/// Maps to `wl_data_device_manager::dnd_action` in the Wayland protocol.
+pub mod dnd_action {
+    /// Copy the dragged data.
+    pub const COPY: u32 = 1;
+    /// Move the dragged data.
+    pub const MOVE: u32 = 2;
+    /// Ask the user which action to perform.
+    pub const ASK: u32 = 4;
+}
+
+/// Drag-and-drop events sent to windows.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DndWindowEvent {
+    /// A drag offer entered the window surface.
+    Enter {
+        /// Surface-local X coordinate.
+        x: f64,
+        /// Surface-local Y coordinate.
+        y: f64,
+        /// MIME types offered by the drag source.
+        mime_types: Vec<String>,
+    },
+    /// The drag cursor moved within the surface.
+    Motion {
+        /// Surface-local X coordinate.
+        x: f64,
+        /// Surface-local Y coordinate.
+        y: f64,
+    },
+    /// The drag offer left the surface without a drop.
+    Leave,
+    /// The user dropped the data on the surface.
+    Drop,
+    /// Data received for a requested MIME type.
+    DataReceived {
+        /// The MIME type.
+        mime_type: String,
+        /// The raw data bytes.
+        data: Vec<u8>,
+    },
+    /// The negotiated action for the current drag.
+    SelectedAction(u32),
+    /// The drag source was cancelled (Escape pressed, etc.).
+    SourceCancelled,
+    /// The drag-and-drop was performed by the destination.
+    SourceDropPerformed,
+    /// The destination finished processing the dropped data.
+    SourceFinished,
+    /// The negotiated action changed (for the source).
+    SourceAction(u32),
+}
+
 /// Voice mode orb display state from the compositor
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoiceModeOrbState {
@@ -517,6 +571,16 @@ pub enum WindowEvent {
     /// - Only available on **Wayland** with a compositor supporting `zcosmic_voice_mode_v1`.
     /// - **Other platforms:** Unsupported.
     VoiceMode(VoiceModeWindowEvent),
+
+    /// Drag-and-drop event from the Wayland compositor.
+    ///
+    /// This event is sent when the `wl_data_device` protocol delivers DnD events
+    /// for this window surface. Use `WindowExtWayland::start_drag` to initiate drags.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - Only available on **Wayland**.
+    Dnd(DndWindowEvent),
 }
 
 /// Identifier of an input device.

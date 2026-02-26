@@ -36,6 +36,7 @@ use crate::platform_impl::wayland::types::cosmic_exclusive_mode::CosmicExclusive
 use crate::platform_impl::wayland::types::cosmic_surface_embed::CosmicSurfaceEmbedManager;
 use crate::platform_impl::wayland::types::cosmic_voice_mode::CosmicVoiceModeManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
+use crate::platform_impl::wayland::types::wayland_dnd::{DndSessionState, WaylandDndManager};
 use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScalingManager;
 use crate::platform_impl::wayland::types::wp_viewporter::ViewporterState;
 use crate::platform_impl::wayland::types::xdg_activation::XdgActivationState;
@@ -133,6 +134,15 @@ pub struct WinitState {
     /// COSMIC voice mode manager.
     pub voice_mode_manager: Option<CosmicVoiceModeManager>,
 
+    /// Wayland DnD (drag-and-drop) manager.
+    pub dnd_manager: Option<WaylandDndManager>,
+
+    /// Per-seat `wl_data_device` for DnD. Stored for lifetime management.
+    pub dnd_data_devices: Vec<sctk::reexports::client::protocol::wl_data_device::WlDataDevice>,
+
+    /// Mutable DnD session state (current offer, source, focused window, etc.).
+    pub dnd_session: DndSessionState,
+
     /// Loop handle to re-register event sources, such as keyboard repeat.
     pub loop_handle: LoopHandle<'static, Self>,
 
@@ -207,6 +217,10 @@ impl WinitState {
             exclusive_mode_manager: CosmicExclusiveModeManager::new(globals, queue_handle).ok(),
             surface_embed_manager: CosmicSurfaceEmbedManager::new(globals, queue_handle).ok(),
             voice_mode_manager: CosmicVoiceModeManager::new(globals, queue_handle).ok(),
+
+            dnd_manager: WaylandDndManager::new(globals, queue_handle).ok(),
+            dnd_data_devices: Vec::new(),
+            dnd_session: DndSessionState::default(),
 
             seats,
             text_input_state: TextInputState::new(globals, queue_handle).ok(),

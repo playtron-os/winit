@@ -128,6 +128,12 @@ impl SeatHandler for WinitState {
                 self.pointer_surfaces.insert(surface_id, themed_pointer.clone());
 
                 seat_state.pointer = Some(themed_pointer);
+
+                // Create a wl_data_device for DnD on this seat.
+                if let Some(dnd_manager) = self.dnd_manager.as_ref() {
+                    let data_device = dnd_manager.get_data_device(&seat, queue_handle);
+                    self.dnd_data_devices.push(data_device);
+                }
             },
             _ => (),
         }

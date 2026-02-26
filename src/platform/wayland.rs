@@ -26,8 +26,7 @@ pub use crate::window::Theme;
 // Re-export voice mode types for the public API
 #[cfg(wayland_platform)]
 pub use crate::platform_impl::wayland::types::cosmic_voice_mode::{
-    OrbState as VoiceModeOrbState,
-    VoiceModeEvent,
+    OrbState as VoiceModeOrbState, VoiceModeEvent,
 };
 
 /// Additional methods on [`ActiveEventLoop`] that are specific to Wayland.
@@ -175,7 +174,13 @@ pub trait WindowExtWayland {
     /// * `top_right` - Top-right corner radius in logical pixels
     /// * `bottom_right` - Bottom-right corner radius in logical pixels
     /// * `bottom_left` - Bottom-left corner radius in logical pixels
-    fn set_corner_radius(&self, top_left: u32, top_right: u32, bottom_right: u32, bottom_left: u32) -> bool;
+    fn set_corner_radius(
+        &self,
+        top_left: u32,
+        top_right: u32,
+        bottom_right: u32,
+        bottom_left: u32,
+    ) -> bool;
 
     /// Set the compositor-rendered backdrop color for this window.
     ///
@@ -226,14 +231,7 @@ pub trait WindowExtWayland {
     /// * `y` - Y position within this window's surface
     /// * `width` - Width of the embed region
     /// * `height` - Height of the embed region
-    fn set_embed_geometry(
-        &self,
-        embed_id: u64,
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
-    ) -> bool;
+    fn set_embed_geometry(&self, embed_id: u64, x: i32, y: i32, width: i32, height: i32) -> bool;
 
     /// Set anchor-based positioning for an embedded surface.
     ///
@@ -336,6 +334,32 @@ pub trait WindowExtWayland {
     ///
     /// Returns `true` if successful, `false` if this window is not a voice mode receiver.
     fn voice_dismiss(&self) -> bool;
+
+    /// Start a Wayland drag-and-drop operation from this window.
+    ///
+    /// Creates a `wl_data_source`, offers the given MIME types, and calls
+    /// `wl_data_device.start_drag(…)`. The `data` vector should parallel
+    /// `mime_types` — entry `i` is the pre-serialized data for
+    /// `mime_types[i]`.
+    ///
+    /// `actions` is a bitfield of supported DnD actions:
+    /// `1` = copy, `2` = move, `4` = ask.
+    ///
+    /// `icon` is optional pre-rendered icon pixel data as
+    /// `(width, height, argb_pixels, buffer_scale)` in pre-multiplied ARGB format.
+    /// The `buffer_scale` is used for HiDPI support (set to 2 for 2x rendering).
+    /// If `None`, a default generic icon is used.
+    ///
+    /// Returns `(true, mime_types, data)` if the drag was started, or
+    /// `(false, mime_types, data)` if it could not be started (e.g. not
+    /// Wayland, no pointer serial, protocol unavailable).
+    fn start_drag(
+        &self,
+        mime_types: Vec<String>,
+        actions: u32,
+        data: Vec<Vec<u8>>,
+        icon: Option<(u32, u32, Vec<u8>, i32)>,
+    ) -> (bool, Vec<String>, Vec<Vec<u8>>);
 }
 
 impl WindowExtWayland for Window {
@@ -414,14 +438,7 @@ impl WindowExtWayland for Window {
     }
 
     #[inline]
-    fn set_embed_geometry(
-        &self,
-        embed_id: u64,
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
-    ) -> bool {
+    fn set_embed_geometry(&self, embed_id: u64, x: i32, y: i32, width: i32, height: i32) -> bool {
         match &self.window {
             #[cfg(x11_platform)]
             crate::platform_impl::Window::X(_) => false,
@@ -448,18 +465,16 @@ impl WindowExtWayland for Window {
             #[cfg(x11_platform)]
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
-            crate::platform_impl::Window::Wayland(window) => {
-                window.set_embed_anchor(
-                    embed_id,
-                    anchor,
-                    margin_top,
-                    margin_right,
-                    margin_bottom,
-                    margin_left,
-                    width,
-                    height,
-                )
-            },
+            crate::platform_impl::Window::Wayland(window) => window.set_embed_anchor(
+                embed_id,
+                anchor,
+                margin_top,
+                margin_right,
+                margin_bottom,
+                margin_left,
+                width,
+                height,
+            ),
         }
     }
 
@@ -476,9 +491,13 @@ impl WindowExtWayland for Window {
             #[cfg(x11_platform)]
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
-            crate::platform_impl::Window::Wayland(window) => {
-                window.set_embed_corner_radius(embed_id, top_left, top_right, bottom_right, bottom_left)
-            },
+            crate::platform_impl::Window::Wayland(window) => window.set_embed_corner_radius(
+                embed_id,
+                top_left,
+                top_right,
+                bottom_right,
+                bottom_left,
+            ),
         }
     }
 
@@ -525,12 +544,20 @@ impl WindowExtWayland for Window {
     }
 
     #[inline]
-    fn set_corner_radius(&self, top_left: u32, top_right: u32, bottom_right: u32, bottom_left: u32) -> bool {
+    fn set_corner_radius(
+        &self,
+        top_left: u32,
+        top_right: u32,
+        bottom_right: u32,
+        bottom_left: u32,
+    ) -> bool {
         match &self.window {
             #[cfg(x11_platform)]
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
-            crate::platform_impl::Window::Wayland(window) => window.set_corner_radius(top_left, top_right, bottom_right, bottom_left),
+            crate::platform_impl::Window::Wayland(window) => {
+                window.set_corner_radius(top_left, top_right, bottom_right, bottom_left)
+            },
         }
     }
 
@@ -591,6 +618,24 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.voice_dismiss(),
+        }
+    }
+
+    #[inline]
+    fn start_drag(
+        &self,
+        mime_types: Vec<String>,
+        actions: u32,
+        data: Vec<Vec<u8>>,
+        icon: Option<(u32, u32, Vec<u8>, i32)>,
+    ) -> (bool, Vec<String>, Vec<Vec<u8>>) {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => (false, mime_types, data),
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.start_drag(mime_types, actions, data, icon)
+            },
         }
     }
 }

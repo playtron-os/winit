@@ -480,8 +480,19 @@ impl Window {
     ///
     /// Returns `true` if the request was sent, `false` if the protocol is not available.
     #[inline]
-    pub fn set_corner_radius(&self, top_left: u32, top_right: u32, bottom_right: u32, bottom_left: u32) -> bool {
-        self.window_state.lock().unwrap().set_corner_radius(top_left, top_right, bottom_right, bottom_left)
+    pub fn set_corner_radius(
+        &self,
+        top_left: u32,
+        top_right: u32,
+        bottom_right: u32,
+        bottom_left: u32,
+    ) -> bool {
+        self.window_state.lock().unwrap().set_corner_radius(
+            top_left,
+            top_right,
+            bottom_right,
+            bottom_left,
+        )
     }
 
     /// Set the compositor-rendered backdrop color for this window.
@@ -508,7 +519,13 @@ impl Window {
         interactive: bool,
     ) -> Option<u64> {
         self.window_state.lock().unwrap().embed_toplevel_by_pid(
-            pid, app_id, x, y, width, height, interactive,
+            pid,
+            app_id,
+            x,
+            y,
+            width,
+            height,
+            interactive,
         )
     }
 
@@ -611,6 +628,24 @@ impl Window {
     #[inline]
     pub fn voice_dismiss(&self) -> bool {
         self.window_state.lock().unwrap().voice_dismiss()
+    }
+
+    /// Start a Wayland drag-and-drop operation from this window.
+    ///
+    /// Returns `(true, mime_types, data)` if the drag was started (callers should
+    /// store `mime_types` and `data` in the DnD session state), or
+    /// `(false, mime_types, data)` if it could not be started.
+    ///
+    /// `icon` is `(width, height, pixels, buffer_scale)` for HiDPI support.
+    #[inline]
+    pub fn start_drag(
+        &self,
+        mime_types: Vec<String>,
+        actions: u32,
+        data: Vec<Vec<u8>>,
+        icon: Option<(u32, u32, Vec<u8>, i32)>,
+    ) -> (bool, Vec<String>, Vec<Vec<u8>>) {
+        self.window_state.lock().unwrap().start_drag(mime_types, actions, data, icon)
     }
 
     #[inline]
