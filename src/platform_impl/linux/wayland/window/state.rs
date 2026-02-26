@@ -54,7 +54,7 @@ use crate::platform_impl::wayland::types::cosmic_voice_mode::{
 };
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
-use crate::platform_impl::wayland::types::wayland_dnd::WaylandDndManager;
+use crate::platform_impl::wayland::types::wayland_dnd::{SharedDndOfferState, WaylandDndManager};
 use crate::platform_impl::{PlatformCustomCursor, WindowId};
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
 
@@ -200,6 +200,8 @@ pub struct WindowState {
     dnd_manager: Option<WaylandDndManager>,
     /// Per-seat data devices for DnD (cloned from WinitState).
     dnd_data_devices: Vec<sctk::reexports::client::protocol::wl_data_device::WlDataDevice>,
+    /// Shared DnD offer state (shared with WinitState).
+    dnd_shared_offer: std::sync::Arc<std::sync::Mutex<SharedDndOfferState>>,
     /// The icon surface + backing buffer for the current drag.
     /// Both must stay alive while the drag is active.
     dnd_icon:
@@ -260,6 +262,7 @@ impl WindowState {
             voice_mode_receiver: None,
             dnd_manager: winit_state.dnd_manager.clone(),
             dnd_data_devices: winit_state.dnd_data_devices.clone(),
+            dnd_shared_offer: winit_state.dnd_session.shared_offer.clone(),
             dnd_icon: None,
             compositor,
             connection,
@@ -1796,6 +1799,71 @@ impl WindowState {
 
         // Return the source info so the caller can store it in WinitState's dnd_session.
         (true, mime_types, data)
+    }
+
+    /// Accept a MIME type from the current DnD offer.
+    ///
+    /// Pass `None` to reject the current drag.
+    pub fn dnd_accept_mime_type(&self, mime_type: Option<&str>) {
+        let guard = self.dnd_shared_offer.lock().unwrap();
+        if let Some(offer) = guard.current_offer.as_ref() {
+            // Get the latest pointer serial for the accept call.
+            let serial = self
+                .pointers
+                .iter()
+                .filter_map(|p| p.upgrade())
+                .map(|p| p.pointer().winit_data().latest_enter_serial())
+                .find(|&s| s != 0)
+                .unwrap_or(0);
+
+            offer.accept(serial, mime_type.map(String::from));
+            tracing::trace!(?mime_type, serial, "DnD: accept_mime_type");
+        } else {
+            tracing::warn!("DnD: accept_mime_type called with no current offer");
+        }
+    }
+
+    /// Set the accepted DnD actions and preferred action.
+    pub fn dnd_set_actions(&self, actions: u32, preferred: u32) {
+        let guard = self.dnd_shared_offer.lock().unwrap();
+        if let Some(offer) = guard.current_offer.as_ref() {
+            use wayland_client::protocol::wl_data_device_manager::DndAction;
+            let mut wl_actions = DndAction::empty();
+            if actions & 1 != 0 {
+                wl_actions |= DndAction::Copy;
+            }
+            if actions & 2 != 0 {
+                wl_actions |= DndAction::Move;
+            }
+            if actions & 4 != 0 {
+                wl_actions |= DndAction::Ask;
+            }
+            let mut wl_preferred = DndAction::empty();
+            if preferred & 1 != 0 {
+                wl_preferred |= DndAction::Copy;
+            }
+            if preferred & 2 != 0 {
+                wl_preferred |= DndAction::Move;
+            }
+            if preferred & 4 != 0 {
+                wl_preferred |= DndAction::Ask;
+            }
+            offer.set_actions(wl_actions, wl_preferred);
+            tracing::trace!(?wl_actions, ?wl_preferred, "DnD: set_actions");
+        } else {
+            tracing::warn!("DnD: set_actions called with no current offer");
+        }
+    }
+
+    /// Signal that the destination has finished processing the drop.
+    pub fn dnd_finish(&self) {
+        let guard = self.dnd_shared_offer.lock().unwrap();
+        if let Some(offer) = guard.current_offer.as_ref() {
+            offer.finish();
+            tracing::trace!("DnD: finish");
+        } else {
+            tracing::warn!("DnD: finish called with no current offer");
+        }
     }
 
     /// Set the window title to a new value.

@@ -648,6 +648,24 @@ impl Window {
         self.window_state.lock().unwrap().start_drag(mime_types, actions, data, icon)
     }
 
+    /// Accept a MIME type from the current DnD offer.
+    #[inline]
+    pub fn dnd_accept_mime_type(&self, mime_type: Option<&str>) {
+        self.window_state.lock().unwrap().dnd_accept_mime_type(mime_type)
+    }
+
+    /// Set the accepted DnD actions and preferred action.
+    #[inline]
+    pub fn dnd_set_actions(&self, actions: u32, preferred: u32) {
+        self.window_state.lock().unwrap().dnd_set_actions(actions, preferred)
+    }
+
+    /// Signal that the destination has finished processing the drop.
+    #[inline]
+    pub fn dnd_finish(&self) {
+        self.window_state.lock().unwrap().dnd_finish()
+    }
+
     #[inline]
     pub fn set_decorations(&self, decorate: bool) {
         self.window_state.lock().unwrap().set_decorate(decorate)

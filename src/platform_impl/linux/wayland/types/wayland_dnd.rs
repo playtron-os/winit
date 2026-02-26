@@ -49,13 +49,24 @@ pub struct DndSourceData {
     pub data: Vec<Vec<u8>>,
 }
 
+/// Shared state for the current DnD offer.
+///
+/// This is wrapped in `Arc<Mutex<...>>` and shared between WinitState and WindowState
+/// so that window methods can access the current offer to call accept/set_actions/finish.
+#[derive(Debug, Default)]
+pub struct SharedDndOfferState {
+    /// The current drag offer, if any.
+    pub current_offer: Option<WlDataOffer>,
+}
+
 /// Shared mutable state for the current DnD session.
 ///
 /// This is stored in `WinitState` and modified by the Dispatch impls.
 #[derive(Debug)]
 pub struct DndSessionState {
-    /// The current drag offer, if any.
-    pub current_offer: Option<WlDataOffer>,
+    /// Shared reference to the current drag offer.
+    /// This is wrapped in Arc<Mutex<>> so WindowState can also access it.
+    pub shared_offer: std::sync::Arc<std::sync::Mutex<SharedDndOfferState>>,
     /// MIME types from the current offer.
     pub offer_mime_types: Vec<String>,
     /// The window currently under the drag cursor.
@@ -67,7 +78,7 @@ pub struct DndSessionState {
 impl Default for DndSessionState {
     fn default() -> Self {
         Self {
-            current_offer: None,
+            shared_offer: std::sync::Arc::new(std::sync::Mutex::new(SharedDndOfferState::default())),
             offer_mime_types: Vec::new(),
             focused_window: None,
             icon_surface: None,
@@ -257,7 +268,7 @@ impl Dispatch<WlDataDevice, DndDeviceData, WinitState> for WaylandDndManager {
             DdEvent::DataOffer { id } => {
                 // A new data offer appeared. Store it; mime types arrive via WlDataOffer events.
                 tracing::trace!("DnD: new data offer");
-                session.current_offer = Some(id);
+                session.shared_offer.lock().unwrap().current_offer = Some(id);
                 session.offer_mime_types.clear();
             },
             DdEvent::Enter { surface, x, y, .. } => {
@@ -287,7 +298,7 @@ impl Dispatch<WlDataDevice, DndDeviceData, WinitState> for WaylandDndManager {
                         .push_window_event(WindowEvent::Dnd(DndWindowEvent::Leave), wid);
                 }
                 // Clear the offer on leave.
-                session.current_offer = None;
+                session.shared_offer.lock().unwrap().current_offer = None;
                 session.offer_mime_types.clear();
             },
             DdEvent::Drop => {

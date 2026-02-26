@@ -360,6 +360,27 @@ pub trait WindowExtWayland {
         data: Vec<Vec<u8>>,
         icon: Option<(u32, u32, Vec<u8>, i32)>,
     ) -> (bool, Vec<String>, Vec<Vec<u8>>);
+
+    /// Accept a MIME type from the current DnD offer.
+    ///
+    /// Call this from `DndWindowEvent::Enter` or `Motion` handlers to signal
+    /// that you can accept the drag with the specified MIME type.
+    /// Pass `None` to reject the current drag.
+    ///
+    /// This must be called on every `Motion` event to continue accepting.
+    fn dnd_accept_mime_type(&self, mime_type: Option<&str>);
+
+    /// Set the accepted DnD actions and preferred action.
+    ///
+    /// `actions` is a bitfield of acceptable actions (1=copy, 2=move, 4=ask).
+    /// `preferred` is the single preferred action from that set.
+    fn dnd_set_actions(&self, actions: u32, preferred: u32);
+
+    /// Signal that the destination has finished processing the drop.
+    ///
+    /// Call this after processing `DndWindowEvent::Drop` to tell the source
+    /// the transfer is complete. Required for the drag to finalize properly.
+    fn dnd_finish(&self);
 }
 
 impl WindowExtWayland for Window {
@@ -635,6 +656,42 @@ impl WindowExtWayland for Window {
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => {
                 window.start_drag(mime_types, actions, data, icon)
+            },
+        }
+    }
+
+    #[inline]
+    fn dnd_accept_mime_type(&self, mime_type: Option<&str>) {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => {},
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.dnd_accept_mime_type(mime_type);
+            },
+        }
+    }
+
+    #[inline]
+    fn dnd_set_actions(&self, actions: u32, preferred: u32) {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => {},
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.dnd_set_actions(actions, preferred);
+            },
+        }
+    }
+
+    #[inline]
+    fn dnd_finish(&self) {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => {},
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.dnd_finish();
             },
         }
     }
