@@ -76,15 +76,21 @@ pub struct DndSessionState {
     pub focused_window: Option<WindowId>,
     /// The icon surface for the drag visual, if created.
     pub icon_surface: Option<WlSurface>,
+    /// Set when a Drop event is received, prevents Leave from clearing the offer
+    /// prematurely (the offer is needed for `finish()`).
+    pub drop_received: bool,
 }
 
 impl Default for DndSessionState {
     fn default() -> Self {
         Self {
-            shared_offer: std::sync::Arc::new(std::sync::Mutex::new(SharedDndOfferState::default())),
+            shared_offer: std::sync::Arc::new(
+                std::sync::Mutex::new(SharedDndOfferState::default()),
+            ),
             offer_mime_types: Vec::new(),
             focused_window: None,
             icon_surface: None,
+            drop_received: false,
         }
     }
 }
@@ -270,7 +276,7 @@ impl Dispatch<WlDataDevice, DndDeviceData, WinitState> for WaylandDndManager {
         match event {
             DdEvent::DataOffer { id } => {
                 // A new data offer appeared. Store it; mime types arrive via WlDataOffer events.
-                tracing::trace!("DnD: new data offer");
+                tracing::debug!("DnD: new data offer");
                 session.shared_offer.lock().unwrap().current_offer = Some(id);
                 session.offer_mime_types.clear();
             },
@@ -279,7 +285,7 @@ impl Dispatch<WlDataDevice, DndDeviceData, WinitState> for WaylandDndManager {
                 session.focused_window = Some(window_id);
 
                 let mime_types = session.offer_mime_types.clone();
-                tracing::trace!(?window_id, x, y, ?mime_types, "DnD: enter");
+                tracing::info!(?window_id, x, y, ?mime_types, "DnD: enter");
 
                 state.events_sink.push_window_event(
                     WindowEvent::Dnd(DndWindowEvent::Enter { x, y, mime_types }),
@@ -295,16 +301,20 @@ impl Dispatch<WlDataDevice, DndDeviceData, WinitState> for WaylandDndManager {
             },
             DdEvent::Leave => {
                 if let Some(wid) = session.focused_window.take() {
-                    tracing::debug!(?wid, "DnD: leave");
+                    tracing::debug!(?wid, drop_received = session.drop_received, "DnD: leave");
                     state
                         .events_sink
                         .push_window_event(WindowEvent::Dnd(DndWindowEvent::Leave), wid);
                 }
-                // Clear the offer on leave.
-                session.shared_offer.lock().unwrap().current_offer = None;
-                session.offer_mime_types.clear();
+                // Only clear the offer on leave if no drop was received.
+                // After Drop, the offer must stay alive for the client to call finish().
+                if !session.drop_received {
+                    session.shared_offer.lock().unwrap().current_offer = None;
+                    session.offer_mime_types.clear();
+                }
             },
             DdEvent::Drop => {
+                session.drop_received = true;
                 if let Some(wid) = session.focused_window {
                     tracing::debug!(?wid, "DnD: drop");
                     state
@@ -389,14 +399,14 @@ impl Dispatch<WlDataSource, DndSourceData, WinitState> for WaylandDndManager {
 
         match event {
             SrcEvent::Target { mime_type } => {
-                tracing::trace!(?mime_type, "DnD source: target accepted");
+                tracing::debug!(?mime_type, "DnD source: target accepted");
             },
             SrcEvent::Send { mime_type, fd } => {
-                tracing::trace!(mime_type, "DnD source: send requested");
+                tracing::debug!(mime_type, "DnD source: send requested");
                 // Write pre-serialized data for the requested MIME type from user_data.
                 if let Some(idx) = data.mime_types.iter().position(|m| m == &mime_type) {
                     if let Some(blob) = data.data.get(idx) {
-                        tracing::trace!(bytes = blob.len(), "DnD source: writing data to fd");
+                        tracing::debug!(bytes = blob.len(), "DnD source: writing data to fd");
                         // Write synchronously (small data).
                         // SAFETY: We borrow the fd for the write but must NOT close it —
                         // wayland-client owns the fd and will close it after this callback.
@@ -415,7 +425,7 @@ impl Dispatch<WlDataSource, DndSourceData, WinitState> for WaylandDndManager {
                 }
             },
             SrcEvent::Cancelled => {
-                tracing::trace!("DnD source: cancelled");
+                tracing::info!("DnD source: cancelled");
                 if let Some(wid) = target_window {
                     state
                         .events_sink
@@ -423,11 +433,15 @@ impl Dispatch<WlDataSource, DndSourceData, WinitState> for WaylandDndManager {
                 }
                 // Destroy the source via the proxy reference.
                 proxy.clone().destroy();
-                // Clean up icon surface.
+                // Clean up session state.
                 state.dnd_session.icon_surface = None;
+                state.dnd_session.drop_received = false;
+                // Clear offer that may have been preserved for finish().
+                state.dnd_session.shared_offer.lock().unwrap().current_offer = None;
+                state.dnd_session.offer_mime_types.clear();
             },
             SrcEvent::DndDropPerformed => {
-                tracing::trace!("DnD source: drop performed");
+                tracing::info!("DnD source: drop performed");
                 if let Some(wid) = target_window {
                     state.events_sink.push_window_event(
                         WindowEvent::Dnd(DndWindowEvent::SourceDropPerformed),
@@ -436,7 +450,7 @@ impl Dispatch<WlDataSource, DndSourceData, WinitState> for WaylandDndManager {
                 }
             },
             SrcEvent::DndFinished => {
-                tracing::trace!("DnD source: finished");
+                tracing::info!("DnD source: finished");
                 if let Some(wid) = target_window {
                     state
                         .events_sink
@@ -444,8 +458,9 @@ impl Dispatch<WlDataSource, DndSourceData, WinitState> for WaylandDndManager {
                 }
                 // Destroy the source via the proxy reference.
                 proxy.clone().destroy();
-                // Clean up icon surface.
+                // Clean up session state.
                 state.dnd_session.icon_surface = None;
+                state.dnd_session.drop_received = false;
             },
             SrcEvent::Action { dnd_action } => {
                 let action_bits = dnd_action.into();

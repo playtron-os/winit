@@ -1788,6 +1788,7 @@ impl WindowState {
             }
         };
         let icon_surface_ref = icon.as_ref().map(|(s, _)| s);
+        let had_icon = icon_surface_ref.is_some();
 
         let origin = self.window.wl_surface();
         data_device.start_drag(Some(&source), origin, icon_surface_ref, serial);
@@ -1795,7 +1796,12 @@ impl WindowState {
         // Keep icon surface + buffer alive for the drag duration.
         self.dnd_icon = icon;
 
-        tracing::trace!(serial, ?mime_types, "DnD: started drag from window");
+        tracing::info!(
+            serial,
+            ?mime_types,
+            has_icon = had_icon,
+            "DnD: started drag from window (wl_data_device.start_drag)"
+        );
 
         // Return the source info so the caller can store it in WinitState's dnd_session.
         (true, mime_types, data)
@@ -1857,10 +1863,10 @@ impl WindowState {
 
     /// Signal that the destination has finished processing the drop.
     pub fn dnd_finish(&self) {
-        let guard = self.dnd_shared_offer.lock().unwrap();
-        if let Some(offer) = guard.current_offer.as_ref() {
+        let mut guard = self.dnd_shared_offer.lock().unwrap();
+        if let Some(offer) = guard.current_offer.take() {
             offer.finish();
-            tracing::trace!("DnD: finish");
+            tracing::info!("DnD: finish - called offer.finish() and cleared offer");
         } else {
             tracing::warn!("DnD: finish called with no current offer");
         }
