@@ -68,10 +68,69 @@ impl PointerHandler for WinitState {
             // The parent surface.
             let parent_surface = match event.surface.data::<SurfaceData>() {
                 Some(data) => data.parent_surface().unwrap_or(surface),
-                None => continue,
+                None => {
+                    continue;
+                },
             };
 
             let window_id = wayland::make_wid(parent_surface);
+
+            // Check if this is a popup surface by looking through active popups
+            let popup_match = self
+                .popups
+                .iter()
+                .find(|(_, ps)| ps.popup.wl_surface() == surface)
+                .map(|(id, ps)| (*id, ps.parent_id));
+
+            if let Some((popup_id, parent_window_id)) = popup_match {
+                // This is a pointer event on a popup surface - forward as popup event
+                use super::super::types::xdg_popup::PopupEvent as PE;
+                match event.kind {
+                    PointerEventKind::Enter { .. } => {
+                        // Re-register the themed pointer on the parent window so cursor
+                        // setting works. The parent's pointer_left() already removed it
+                        // when the pointer left the parent surface for the popup.
+                        if let Some(window) = self.windows.get_mut().get_mut(&parent_window_id) {
+                            let mut window = window.lock().unwrap();
+                            window.pointer_entered(Arc::downgrade(themed_pointer));
+                        }
+                        self.popup_events.push(PE::PointerEnter {
+                            id: popup_id,
+                            x: event.position.0,
+                            y: event.position.1,
+                        });
+                    },
+                    PointerEventKind::Leave { .. } => {
+                        // Remove the pointer from the parent window (it was re-added
+                        // on popup enter). If the pointer re-enters the parent surface,
+                        // the normal Enter handler will add it back.
+                        if let Some(window) = self.windows.get_mut().get_mut(&parent_window_id) {
+                            let mut window = window.lock().unwrap();
+                            window.pointer_left(Arc::downgrade(themed_pointer));
+                        }
+                        self.popup_events.push(PE::PointerLeave { id: popup_id });
+                    },
+                    PointerEventKind::Motion { .. } => {
+                        self.popup_events.push(PE::PointerMotion {
+                            id: popup_id,
+                            x: event.position.0,
+                            y: event.position.1,
+                        });
+                    },
+                    ref kind @ PointerEventKind::Press { button, serial, .. }
+                    | ref kind @ PointerEventKind::Release { button, serial, .. } => {
+                        pointer.winit_data().inner.lock().unwrap().latest_button_serial = serial;
+                        self.popup_events.push(PE::PointerButton {
+                            id: popup_id,
+                            button,
+                            pressed: matches!(kind, PointerEventKind::Press { .. }),
+                        });
+                    },
+                    _ => {},
+                }
+                self.dispatched_events = true;
+                continue;
+            }
 
             // Ensure that window exists.
             let mut window = match self.windows.get_mut().get_mut(&window_id) {

@@ -29,16 +29,101 @@ pub use crate::platform_impl::wayland::types::cosmic_voice_mode::{
     OrbState as VoiceModeOrbState, VoiceModeEvent,
 };
 
+// Re-export popup types for the public API
+#[cfg(wayland_platform)]
+pub use crate::platform_impl::wayland::types::xdg_popup::{
+    PopupAnchor, PopupEvent, PopupGravity, PopupId, PopupSettings,
+};
+
 /// Additional methods on [`ActiveEventLoop`] that are specific to Wayland.
 pub trait ActiveEventLoopExtWayland {
     /// True if the [`ActiveEventLoop`] uses Wayland.
     fn is_wayland(&self) -> bool;
+
+    /// Create an xdg_popup surface relative to a parent window.
+    ///
+    /// This creates a proper Wayland popup that can extend outside the parent window bounds
+    /// and receives compositor popup semantics (auto-dismiss, input grab, layer stacking).
+    ///
+    /// Returns the popup ID on success, or None if:
+    /// - The [`ActiveEventLoop`] is not using Wayland
+    /// - The parent window doesn't exist
+    /// - The compositor doesn't support xdg_popup
+    #[cfg(wayland_platform)]
+    fn create_popup(&self, settings: PopupSettings) -> Option<PopupId>;
+
+    /// Destroy a popup surface.
+    ///
+    /// Returns true if the popup was found and destroyed.
+    #[cfg(wayland_platform)]
+    fn destroy_popup(&self, popup_id: PopupId) -> bool;
+
+    /// Get the wl_surface for a popup (for rendering).
+    ///
+    /// Returns a raw pointer to the wl_surface that can be used for attaching
+    /// graphical content. The popup must have been configured first.
+    #[cfg(wayland_platform)]
+    fn popup_wl_surface(&self, popup_id: PopupId) -> Option<NonNull<c_void>>;
+
+    /// Get raw handles for a popup surface.
+    /// Returns (surface_ptr, display_ptr) for creating a wgpu surface.
+    #[cfg(wayland_platform)]
+    fn popup_raw_handles(&self, popup_id: PopupId) -> Option<(NonNull<c_void>, NonNull<c_void>)>;
+
+    /// Get pending popup events and clear the queue.
+    #[cfg(wayland_platform)]
+    fn take_popup_events(&self) -> Vec<PopupEvent>;
 }
 
 impl ActiveEventLoopExtWayland for ActiveEventLoop {
     #[inline]
     fn is_wayland(&self) -> bool {
         self.p.is_wayland()
+    }
+
+    #[cfg(wayland_platform)]
+    fn create_popup(&self, settings: PopupSettings) -> Option<PopupId> {
+        match &self.p {
+            crate::platform_impl::ActiveEventLoop::Wayland(w) => w.create_popup(settings),
+            #[cfg(x11_platform)]
+            _ => None,
+        }
+    }
+
+    #[cfg(wayland_platform)]
+    fn destroy_popup(&self, popup_id: PopupId) -> bool {
+        match &self.p {
+            crate::platform_impl::ActiveEventLoop::Wayland(w) => w.destroy_popup(popup_id),
+            #[cfg(x11_platform)]
+            _ => false,
+        }
+    }
+
+    #[cfg(wayland_platform)]
+    fn popup_wl_surface(&self, popup_id: PopupId) -> Option<NonNull<c_void>> {
+        match &self.p {
+            crate::platform_impl::ActiveEventLoop::Wayland(w) => w.popup_wl_surface(popup_id),
+            #[cfg(x11_platform)]
+            _ => None,
+        }
+    }
+
+    #[cfg(wayland_platform)]
+    fn popup_raw_handles(&self, popup_id: PopupId) -> Option<(NonNull<c_void>, NonNull<c_void>)> {
+        match &self.p {
+            crate::platform_impl::ActiveEventLoop::Wayland(w) => w.popup_raw_handles(popup_id),
+            #[cfg(x11_platform)]
+            _ => None,
+        }
+    }
+
+    #[cfg(wayland_platform)]
+    fn take_popup_events(&self) -> Vec<PopupEvent> {
+        match &self.p {
+            crate::platform_impl::ActiveEventLoop::Wayland(w) => w.take_popup_events(),
+            #[cfg(x11_platform)]
+            _ => Vec::new(),
+        }
     }
 }
 

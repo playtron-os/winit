@@ -1886,7 +1886,7 @@ impl WindowState {
             Err(e) => {
                 tracing::error!(?e, "DnD: failed to create pipe for receive");
                 return;
-            }
+            },
         };
 
         tracing::trace!(?mime_type, "DnD: requesting data via receive");

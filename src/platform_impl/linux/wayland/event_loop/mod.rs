@@ -18,7 +18,11 @@ use rustix::pipe::{self, PipeFlags};
 use sctk::reexports::calloop::Error as CalloopError;
 use sctk::reexports::calloop_wayland_source::WaylandSource;
 use sctk::reexports::client::{globals, Connection, QueueHandle};
+use sctk::shell::xdg::popup::Popup;
 use tracing::warn;
+use wayland_protocols::xdg::shell::client::xdg_positioner;
+
+use super::types::xdg_popup::{PopupId, PopupSettings, PopupState};
 
 use crate::cursor::OnlyCursorImage;
 use crate::dpi::LogicalSize;
@@ -453,10 +457,7 @@ impl<T: 'static> EventLoop<T> {
             for (&window_id, window) in state.windows.get_mut().iter_mut() {
                 let voice_events = window.lock().unwrap().take_voice_mode_events();
                 for voice_event in voice_events {
-                    buffer_sink.push_window_event(
-                        WindowEvent::VoiceMode(voice_event),
-                        window_id,
-                    );
+                    buffer_sink.push_window_event(WindowEvent::VoiceMode(voice_event), window_id);
                 }
             }
         });
@@ -469,7 +470,9 @@ impl<T: 'static> EventLoop<T> {
 
             if !pending.is_empty() {
                 // Send to the focused window, or first window as fallback
-                let target_window = state.dnd_session.focused_window
+                let target_window = state
+                    .dnd_session
+                    .focused_window
                     .or_else(|| state.windows.borrow().keys().next().copied());
 
                 if let Some(wid) = target_window {
@@ -751,9 +754,200 @@ impl ActiveEventLoop {
         })
         .into())
     }
-}
 
-#[derive(Debug)]
+    /// Create an xdg_popup surface relative to a parent window.
+    ///
+    /// This creates a proper Wayland popup that can extend outside the parent window bounds
+    /// and receives compositor popup semantics (auto-dismiss, input grab, layer stacking).
+    ///
+    /// Returns the popup ID on success, or None if:
+    /// - The parent window doesn't exist
+    /// - The compositor doesn't support xdg_popup
+    pub fn create_popup(&self, settings: PopupSettings) -> Option<PopupId> {
+        use sctk::compositor::Surface;
+        use sctk::shell::xdg::{XdgPositioner, XdgSurface as XdgSurfaceTrait};
+
+        let mut state = self.state.borrow_mut();
+
+        // Convert public WindowId to internal WindowId for lookup
+        let internal_parent_id = WindowId(u64::from(settings.parent_id));
+
+        // Get the parent window's xdg_surface (clone to release lock)
+        let (parent_xdg_surface, parent_scale_factor) = {
+            let parent_window = state.windows.borrow().get(&internal_parent_id)?.clone();
+            let parent_guard = parent_window.lock().ok()?;
+            (parent_guard.window.xdg_surface().clone(), parent_guard.scale_factor())
+        };
+
+        tracing::info!(
+            "create_popup: parent_scale_factor={}, size=({}, {}), anchor_rect=({}, {}, {}, {}), offset=({}, {}), anchor={:?}, gravity={:?}",
+            parent_scale_factor,
+            settings.size.0, settings.size.1,
+            settings.anchor_rect.0, settings.anchor_rect.1, settings.anchor_rect.2, settings.anchor_rect.3,
+            settings.offset.0, settings.offset.1,
+            settings.anchor, settings.gravity
+        );
+
+        // Create a new surface for the popup
+        let surface = Surface::new(&*state.compositor_state, &self.queue_handle).ok()?;
+
+        // Create positioner
+        let positioner = XdgPositioner::new(&state.xdg_shell).ok()?;
+        // Use window_geometry dimensions for positioner size if available.
+        // Per xdg_positioner spec, set_size should match the window geometry
+        // (visible content), not the full surface (which may include shadows).
+        // This ensures FLIP constraint adjustment positions based on visible
+        // content bounds, not the full surface including shadow padding.
+        if let Some((_gx, _gy, gw, gh)) = settings.window_geometry {
+            positioner.set_size(gw, gh);
+        } else {
+            positioner.set_size(settings.size.0 as i32, settings.size.1 as i32);
+        }
+        positioner.set_anchor_rect(
+            settings.anchor_rect.0,
+            settings.anchor_rect.1,
+            settings.anchor_rect.2,
+            settings.anchor_rect.3,
+        );
+        positioner.set_anchor(settings.anchor.to_xdg());
+        positioner.set_gravity(settings.gravity.to_xdg());
+        positioner.set_offset(settings.offset.0, settings.offset.1);
+        // Enable reactive repositioning when parent moves
+        positioner.set_reactive();
+        // Apply constraint adjustment from settings (0 = no adjustment)
+        positioner.set_constraint_adjustment(
+            xdg_positioner::ConstraintAdjustment::from_bits_truncate(
+                settings.constraint_adjustment,
+            ),
+        );
+
+        // Drop parent guard before creating popup to avoid holding lock
+        // (parent_guard is already dropped due to scoping above)
+
+        // Create the popup - get positioner reference via Deref
+        let popup = Popup::from_surface(
+            Some(&parent_xdg_surface),
+            &*positioner,
+            &self.queue_handle,
+            surface,
+            &state.xdg_shell,
+        )
+        .ok()?;
+
+        // Create viewport for HiDPI scaling if viewporter is available
+        let viewport = state
+            .viewporter_state
+            .as_ref()
+            .map(|vp_state| vp_state.get_viewport(popup.wl_surface(), &self.queue_handle));
+
+        // Set up grab for auto-dismiss on click-outside
+        if settings.grab {
+            // Find the first pointer's seat and latest button serial for the grab.
+            // ThemedPointer wraps WlPointer which has WinitPointerData attached.
+            let grab_info = state.pointer_surfaces.values().next().and_then(|ptr| {
+                use sctk::reexports::client::Proxy;
+                let wl_ptr = ptr.pointer();
+                let winit_data =
+                    wl_ptr.data::<crate::platform_impl::wayland::seat::WinitPointerData>()?;
+                let serial = winit_data.latest_button_serial();
+                // serial 0 means no button event received yet
+                if serial == 0 {
+                    return None;
+                }
+                Some((winit_data.seat().clone(), serial))
+            });
+
+            if let Some((seat, serial)) = grab_info {
+                popup.xdg_popup().grab(&seat, serial);
+            }
+        }
+
+        // Set window geometry to tell compositor about visible content bounds.
+        // This ensures constraint adjustment (SLIDE/FLIP) constrains against
+        // the visible content area, not the full surface including shadows.
+        if let Some((gx, gy, gw, gh)) = settings.window_geometry {
+            popup.xdg_surface().set_window_geometry(gx, gy, gw as i32, gh as i32);
+            tracing::info!("Set popup window_geometry: ({}, {}, {}, {})", gx, gy, gw, gh);
+        }
+
+        // Commit the surface to trigger configure
+        popup.wl_surface().commit();
+
+        // Generate popup ID
+        let popup_id = PopupId::new();
+
+        // Store the popup state
+        let popup_state = PopupState::new(
+            popup,
+            internal_parent_id,
+            crate::dpi::LogicalSize::new(settings.size.0, settings.size.1),
+            viewport,
+        );
+        state.popups.insert(popup_id, popup_state);
+
+        // Wake up the event loop
+        self.event_loop_awakener.ping();
+
+        Some(popup_id)
+    }
+
+    /// Destroy a popup surface.
+    pub fn destroy_popup(&self, popup_id: PopupId) -> bool {
+        let mut state = self.state.borrow_mut();
+        state.popups.remove(&popup_id).is_some()
+    }
+
+    /// Get the wl_surface for a popup (for rendering).
+    ///
+    /// Returns a raw pointer to the wl_surface that can be used for attaching
+    /// graphical content. The popup must have been configured first.
+    pub fn popup_wl_surface(
+        &self,
+        popup_id: PopupId,
+    ) -> Option<std::ptr::NonNull<std::ffi::c_void>> {
+        use sctk::reexports::client::Proxy;
+
+        let state = self.state.borrow();
+        let popup_state = state.popups.get(&popup_id)?;
+
+        if !popup_state.configured {
+            return None;
+        }
+
+        let ptr = popup_state.popup.wl_surface().id().as_ptr();
+        std::ptr::NonNull::new(ptr as *mut _)
+    }
+
+    /// Get raw handles for a popup surface.
+    /// Returns (surface_ptr, display_ptr) for creating a wgpu surface.
+    pub fn popup_raw_handles(
+        &self,
+        popup_id: PopupId,
+    ) -> Option<(std::ptr::NonNull<std::ffi::c_void>, std::ptr::NonNull<std::ffi::c_void>)> {
+        use sctk::reexports::client::Proxy;
+
+        let state = self.state.borrow();
+        let popup_state = state.popups.get(&popup_id)?;
+
+        if !popup_state.configured {
+            return None;
+        }
+
+        let surface_ptr = popup_state.popup.wl_surface().id().as_ptr();
+        let display_ptr = self.connection.display().id().as_ptr();
+
+        Some((
+            std::ptr::NonNull::new(surface_ptr as *mut _)?,
+            std::ptr::NonNull::new(display_ptr as *mut _)?,
+        ))
+    }
+
+    /// Get pending popup events and clear the queue.
+    pub fn take_popup_events(&self) -> Vec<super::types::xdg_popup::PopupEvent> {
+        let mut state = self.state.borrow_mut();
+        std::mem::take(&mut state.popup_events)
+    }
+}
 struct PumpEventNotifier {
     /// Whether we're in winit or not.
     control: Arc<(Mutex<PumpEventNotifierAction>, Condvar)>,

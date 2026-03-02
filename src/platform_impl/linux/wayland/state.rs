@@ -16,6 +16,7 @@ use sctk::output::{OutputHandler, OutputState};
 use sctk::registry::{ProvidesRegistryState, RegistryState};
 use sctk::seat::pointer::ThemedPointer;
 use sctk::seat::SeatState;
+use sctk::shell::xdg::popup::{Popup, PopupConfigure, PopupHandler};
 use sctk::shell::xdg::window::{Window, WindowConfigure, WindowHandler};
 use sctk::shell::xdg::XdgShell;
 use sctk::shell::WaylandSurface;
@@ -40,6 +41,7 @@ use crate::platform_impl::wayland::types::wayland_dnd::{DndSessionState, Wayland
 use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScalingManager;
 use crate::platform_impl::wayland::types::wp_viewporter::ViewporterState;
 use crate::platform_impl::wayland::types::xdg_activation::XdgActivationState;
+use crate::platform_impl::wayland::types::xdg_popup::{PopupEvent, PopupId, PopupState};
 use crate::platform_impl::wayland::window::{WindowRequests, WindowState};
 use crate::platform_impl::wayland::{WaylandError, WindowId};
 use crate::platform_impl::OsError;
@@ -143,6 +145,12 @@ pub struct WinitState {
     /// Mutable DnD session state (current offer, source, focused window, etc.).
     pub dnd_session: DndSessionState,
 
+    /// Active popup surfaces.
+    pub popups: AHashMap<PopupId, PopupState>,
+
+    /// Pending popup events to deliver to the application.
+    pub popup_events: Vec<PopupEvent>,
+
     /// Loop handle to re-register event sources, such as keyboard repeat.
     pub loop_handle: LoopHandle<'static, Self>,
 
@@ -221,6 +229,9 @@ impl WinitState {
             dnd_manager: WaylandDndManager::new(globals, queue_handle).ok(),
             dnd_data_devices: Vec::new(),
             dnd_session: DndSessionState::default(),
+
+            popups: Default::default(),
+            popup_events: Vec::new(),
 
             seats,
             text_input_state: TextInputState::new(globals, queue_handle).ok(),
@@ -477,3 +488,79 @@ sctk::delegate_registry!(WinitState);
 sctk::delegate_shm!(WinitState);
 sctk::delegate_xdg_shell!(WinitState);
 sctk::delegate_xdg_window!(WinitState);
+sctk::delegate_xdg_popup!(WinitState);
+
+impl PopupHandler for WinitState {
+    fn configure(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        popup: &Popup,
+        config: PopupConfigure,
+    ) {
+        // Find the popup by wl_surface
+        let popup_id = self
+            .popups
+            .iter()
+            .find(|(_, state)| state.popup.wl_surface() == popup.wl_surface())
+            .map(|(id, _)| *id);
+
+        if let Some(id) = popup_id {
+            if let Some(state) = self.popups.get_mut(&id) {
+                // Don't overwrite size with configure dimensions. The configure
+                // returns the *geometry* size (visible content), but we need
+                // the full surface size (including shadow) for rendering.
+                // state.size was set to the full surface size in create_popup.
+                state.configured = true;
+
+                // Set viewport destination to the full surface size for HiDPI.
+                // The surface buffer is rendered at the full size (with shadows),
+                // not the geometry size returned by configure.
+                if let Some(ref viewport) = state.viewport {
+                    viewport.set_destination(state.size.width as i32, state.size.height as i32);
+                }
+            }
+
+            // Use stored full surface size for the event, not configure's
+            // geometry size, so iced creates the viewport/surface at the
+            // correct rendering dimensions (including shadow padding).
+            let (event_width, event_height) = self
+                .popups
+                .get(&id)
+                .map(|s| (s.size.width, s.size.height))
+                .unwrap_or((config.width as u32, config.height as u32));
+
+            tracing::debug!(
+                "Popup {:?} configured by compositor: position=({}, {}), geometry={}x{}, surface={}x{}",
+                id,
+                config.position.0,
+                config.position.1,
+                config.width,
+                config.height,
+                event_width,
+                event_height,
+            );
+            self.popup_events.push(PopupEvent::Configure {
+                id,
+                width: event_width,
+                height: event_height,
+            });
+            self.dispatched_events = true;
+        }
+    }
+
+    fn done(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, popup: &Popup) {
+        // Find and remove the popup
+        let popup_id = self
+            .popups
+            .iter()
+            .find(|(_, state)| state.popup.wl_surface() == popup.wl_surface())
+            .map(|(id, _)| *id);
+
+        if let Some(id) = popup_id {
+            self.popups.remove(&id);
+            self.popup_events.push(PopupEvent::Done { id });
+            self.dispatched_events = true;
+        }
+    }
+}
