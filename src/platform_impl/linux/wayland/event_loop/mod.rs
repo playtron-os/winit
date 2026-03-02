@@ -942,6 +942,28 @@ impl ActiveEventLoop {
         ))
     }
 
+    /// Resize a popup surface.
+    ///
+    /// Updates the popup's stored size, viewport destination, and commits
+    /// the surface so the compositor picks up the new dimensions.
+    pub fn resize_popup(&self, popup_id: PopupId, width: u32, height: u32) -> bool {
+        let mut state = self.state.borrow_mut();
+        let Some(popup_state) = state.popups.get_mut(&popup_id) else {
+            return false;
+        };
+
+        popup_state.size = crate::dpi::LogicalSize::new(width, height);
+
+        if let Some(ref viewport) = popup_state.viewport {
+            viewport.set_destination(width as i32, height as i32);
+        }
+
+        popup_state.popup.wl_surface().commit();
+        self.event_loop_awakener.ping();
+
+        true
+    }
+
     /// Get pending popup events and clear the queue.
     pub fn take_popup_events(&self) -> Vec<super::types::xdg_popup::PopupEvent> {
         let mut state = self.state.borrow_mut();

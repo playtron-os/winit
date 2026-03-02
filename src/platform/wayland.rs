@@ -70,6 +70,13 @@ pub trait ActiveEventLoopExtWayland {
     #[cfg(wayland_platform)]
     fn popup_raw_handles(&self, popup_id: PopupId) -> Option<(NonNull<c_void>, NonNull<c_void>)>;
 
+    /// Resize a popup surface.
+    ///
+    /// Updates the popup's surface size and viewport. The compositor will be
+    /// notified via a surface commit. Returns true if the popup was found.
+    #[cfg(wayland_platform)]
+    fn resize_popup(&self, popup_id: PopupId, width: u32, height: u32) -> bool;
+
     /// Get pending popup events and clear the queue.
     #[cfg(wayland_platform)]
     fn take_popup_events(&self) -> Vec<PopupEvent>;
@@ -114,6 +121,17 @@ impl ActiveEventLoopExtWayland for ActiveEventLoop {
             crate::platform_impl::ActiveEventLoop::Wayland(w) => w.popup_raw_handles(popup_id),
             #[cfg(x11_platform)]
             _ => None,
+        }
+    }
+
+    #[cfg(wayland_platform)]
+    fn resize_popup(&self, popup_id: PopupId, width: u32, height: u32) -> bool {
+        match &self.p {
+            crate::platform_impl::ActiveEventLoop::Wayland(w) => {
+                w.resize_popup(popup_id, width, height)
+            },
+            #[cfg(x11_platform)]
+            _ => false,
         }
     }
 
