@@ -766,6 +766,7 @@ impl ActiveEventLoop {
     pub fn create_popup(&self, settings: PopupSettings) -> Option<PopupId> {
         use sctk::compositor::Surface;
         use sctk::shell::xdg::{XdgPositioner, XdgSurface as XdgSurfaceTrait};
+        use sctk::shell::WaylandSurface;
 
         let mut state = self.state.borrow_mut();
 
@@ -773,13 +774,17 @@ impl ActiveEventLoop {
         let internal_parent_id = WindowId(u64::from(settings.parent_id));
 
         // Get the parent window's xdg_surface (clone to release lock)
-        let (parent_xdg_surface, parent_scale_factor) = {
+        let (parent_xdg_surface, parent_wl_surface, parent_scale_factor) = {
             let parent_window = state.windows.borrow().get(&internal_parent_id)?.clone();
             let parent_guard = parent_window.lock().ok()?;
-            (parent_guard.window.xdg_surface().clone(), parent_guard.scale_factor())
+            (
+                parent_guard.window.xdg_surface().clone(),
+                parent_guard.window.wl_surface().clone(),
+                parent_guard.scale_factor(),
+            )
         };
 
-        tracing::info!(
+        tracing::debug!(
             "create_popup: parent_scale_factor={}, size=({}, {}), anchor_rect=({}, {}, {}, {}), offset=({}, {}), anchor={:?}, gravity={:?}",
             parent_scale_factor,
             settings.size.0, settings.size.1,
@@ -865,9 +870,17 @@ impl ActiveEventLoop {
         // Set window geometry to tell compositor about visible content bounds.
         // This ensures constraint adjustment (SLIDE/FLIP) constrains against
         // the visible content area, not the full surface including shadows.
+        // When no explicit geometry is provided, default to the full popup size
+        // so the compositor always has accurate geometry for anchor calculations.
         if let Some((gx, gy, gw, gh)) = settings.window_geometry {
             popup.xdg_surface().set_window_geometry(gx, gy, gw as i32, gh as i32);
-            tracing::info!("Set popup window_geometry: ({}, {}, {}, {})", gx, gy, gw, gh);
+        } else {
+            popup.xdg_surface().set_window_geometry(
+                0,
+                0,
+                settings.size.0 as i32,
+                settings.size.1 as i32,
+            );
         }
 
         // Commit the surface to trigger configure
@@ -877,12 +890,39 @@ impl ActiveEventLoop {
         let popup_id = PopupId::new();
 
         // Store the popup state
-        let popup_state = PopupState::new(
+        let mut popup_state = PopupState::new(
             popup,
             internal_parent_id,
             crate::dpi::LogicalSize::new(settings.size.0, settings.size.1),
             viewport,
         );
+
+        // Set up compositor-driven tooltip positioning if requested
+        if let Some((offset_x, offset_y)) = settings.tooltip_offset {
+            use sctk::reexports::client::Proxy;
+            if let Some(ref tooltip_manager) = state.tooltip_manager {
+                let popup_wl_surface = popup_state.popup.wl_surface();
+                let tooltip_handle = tooltip_manager.get_tooltip(
+                    popup_wl_surface,
+                    &parent_wl_surface,
+                    &self.queue_handle,
+                );
+                tooltip_handle.set_offset(offset_x, offset_y);
+                if let Some(anchor) = settings.tooltip_anchor {
+                    tooltip_handle.set_anchor(anchor);
+                }
+                if let Some(delay_ms) = settings.tooltip_delay_ms {
+                    tooltip_handle.set_show_delay(delay_ms);
+                }
+                popup_state.tooltip = Some(tooltip_handle);
+            } else {
+                tracing::warn!(
+                    "create_popup: tooltip_offset set but tooltip_manager is None! \
+                     Protocol zcosmic_tooltip_manager_v1 may not be advertised by compositor."
+                );
+            }
+        }
+
         state.popups.insert(popup_id, popup_state);
 
         // Wake up the event loop

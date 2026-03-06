@@ -5,6 +5,7 @@ pub mod cosmic_backdrop_color;
 pub mod cosmic_corner_radius;
 pub mod cosmic_exclusive_mode;
 pub mod cosmic_surface_embed;
+pub mod cosmic_tooltip;
 pub mod cosmic_voice_mode;
 pub mod cursor;
 pub mod kwin_blur;

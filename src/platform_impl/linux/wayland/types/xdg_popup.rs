@@ -7,6 +7,7 @@ use sctk::reexports::protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use sctk::shell::xdg::popup::Popup;
 
 use crate::dpi::LogicalSize;
+use crate::platform_impl::wayland::types::cosmic_tooltip::TooltipHandle;
 use crate::platform_impl::wayland::WindowId;
 use crate::window::WindowId as PublicWindowId;
 
@@ -134,6 +135,13 @@ pub struct PopupSettings {
     /// excluding shadows/decorations. Used by the compositor for constraint
     /// adjustment — only the geometry rect is kept on-screen.
     pub window_geometry: Option<(i32, i32, i32, i32)>,
+    /// When set, enables compositor-driven tooltip positioning at pointer + offset.
+    /// The tuple is (x, y) offset in logical pixels.
+    pub tooltip_offset: Option<(i32, i32)>,
+    /// Tooltip anchor corner (0=TopLeft, 1=TopRight, 2=BottomLeft, 3=BottomRight).
+    pub tooltip_anchor: Option<u32>,
+    /// Show delay in milliseconds (0 = immediate cursor-following, >0 = delayed fixed position).
+    pub tooltip_delay_ms: Option<u32>,
 }
 
 impl Default for PopupSettings {
@@ -148,6 +156,9 @@ impl Default for PopupSettings {
             constraint_adjustment: 0,
             grab: false,
             window_geometry: None,
+            tooltip_offset: None,
+            tooltip_anchor: None,
+            tooltip_delay_ms: None,
         }
     }
 }
@@ -164,6 +175,8 @@ pub struct PopupState {
     pub configured: bool,
     /// Viewporter for HiDPI scaling (optional, present if compositor supports it).
     pub viewport: Option<WpViewport>,
+    /// Tooltip handle (if tooltip positioning is enabled for this popup).
+    pub tooltip: Option<TooltipHandle>,
 }
 
 impl PopupState {
@@ -174,7 +187,7 @@ impl PopupState {
         size: LogicalSize<u32>,
         viewport: Option<WpViewport>,
     ) -> Self {
-        Self { popup, parent_id, size, configured: false, viewport }
+        Self { popup, parent_id, size, configured: false, viewport, tooltip: None }
     }
 }
 

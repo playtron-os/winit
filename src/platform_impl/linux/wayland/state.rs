@@ -35,6 +35,7 @@ use crate::platform_impl::wayland::types::cosmic_backdrop_color::CosmicBackdropC
 use crate::platform_impl::wayland::types::cosmic_corner_radius::CosmicCornerRadiusManager;
 use crate::platform_impl::wayland::types::cosmic_exclusive_mode::CosmicExclusiveModeManager;
 use crate::platform_impl::wayland::types::cosmic_surface_embed::CosmicSurfaceEmbedManager;
+use crate::platform_impl::wayland::types::cosmic_tooltip::CosmicTooltipManager;
 use crate::platform_impl::wayland::types::cosmic_voice_mode::CosmicVoiceModeManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::wayland_dnd::{DndSessionState, WaylandDndManager};
@@ -133,6 +134,9 @@ pub struct WinitState {
     /// COSMIC surface embed manager.
     pub surface_embed_manager: Option<CosmicSurfaceEmbedManager>,
 
+    /// COSMIC tooltip manager.
+    pub tooltip_manager: Option<CosmicTooltipManager>,
+
     /// COSMIC voice mode manager.
     pub voice_mode_manager: Option<CosmicVoiceModeManager>,
 
@@ -224,6 +228,7 @@ impl WinitState {
             backdrop_color_manager: CosmicBackdropColorManager::new(globals, queue_handle).ok(),
             exclusive_mode_manager: CosmicExclusiveModeManager::new(globals, queue_handle).ok(),
             surface_embed_manager: CosmicSurfaceEmbedManager::new(globals, queue_handle).ok(),
+            tooltip_manager: CosmicTooltipManager::new(globals, queue_handle).ok(),
             voice_mode_manager: CosmicVoiceModeManager::new(globals, queue_handle).ok(),
 
             dnd_manager: WaylandDndManager::new(globals, queue_handle).ok(),
