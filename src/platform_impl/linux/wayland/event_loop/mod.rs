@@ -285,9 +285,26 @@ impl<T: 'static> EventLoop<T> {
             //
             // Checking for flush error is essential to perform an exit with error, since
             // once we have a protocol error, we could get stuck retrying...
-            if self.connection.flush().is_err() {
-                self.set_exit_code(1);
-                return;
+            if let Err(err) = self.connection.flush() {
+                use sctk::reexports::client::backend::WaylandError as BackendError;
+                match err {
+                    // BrokenPipe (EPIPE) can occur transiently during rapid
+                    // window state transitions (e.g. maximize/unmaximize).
+                    // Retry once rather than immediately exiting.
+                    BackendError::Io(ref e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+                        warn!("Wayland flush got broken pipe, retrying once");
+                        if self.connection.flush().is_err() {
+                            warn!("Wayland flush retry also failed, exiting");
+                            self.set_exit_code(1);
+                            return;
+                        }
+                    },
+                    // Protocol errors and other IO errors are fatal.
+                    _ => {
+                        self.set_exit_code(1);
+                        return;
+                    },
+                }
             }
 
             if let Err(error) = self.loop_dispatch(timeout) {
