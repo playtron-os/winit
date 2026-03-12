@@ -342,15 +342,58 @@ impl WindowHandler for WinitState {
             self.window_compositor_updates.len() - 1
         };
 
-        // Populate the configure to the window.
-        self.window_compositor_updates[pos].resized |= self
+        // The initial configure must be applied immediately because
+        // window creation blocks in blocking_dispatch() waiting for
+        // is_configured() (i.e. last_configure.is_some()). Deferring
+        // it would deadlock since single_iteration never runs.
+        // Subsequent configures during animated resize are deferred so
+        // only the latest per dispatch cycle is applied, avoiding
+        // hundreds of intermediate set_window_geometry writes that can
+        // overflow the Wayland socket buffer.
+        let is_initial = !self
             .windows
             .get_mut()
-            .get_mut(&window_id)
+            .get(&window_id)
             .expect("got configure for dead window.")
             .lock()
             .unwrap()
-            .configure(configure, &self.shm, &self.subcompositor_state);
+            .is_configured();
+
+        if is_initial {
+            tracing::debug!(
+                "configure: INITIAL window={:?} size=({:?},{:?}) state={:?}",
+                window_id,
+                configure.new_size.0.map(|v| v.get()),
+                configure.new_size.1.map(|v| v.get()),
+                configure.state,
+            );
+            // Apply immediately for initial configure.
+            self.window_compositor_updates[pos].resized |= self
+                .windows
+                .get_mut()
+                .get_mut(&window_id)
+                .expect("got configure for dead window.")
+                .lock()
+                .unwrap()
+                .configure(configure, &self.shm, &self.subcompositor_state);
+        } else {
+            let had_pending = self.window_compositor_updates[pos].pending_configure.is_some();
+            tracing::debug!(
+                "configure: DEFERRED window={:?} size=({:?},{:?}) state={:?} had_pending={}",
+                window_id,
+                configure.new_size.0.map(|v| v.get()),
+                configure.new_size.1.map(|v| v.get()),
+                configure.state,
+                had_pending,
+            );
+            // Store the latest configure without immediately applying it.
+            // During animated resize, cosmic-comp can send many per-pixel
+            // configures in a single dispatch cycle. Processing each one would
+            // trigger set_window_geometry writes that contribute to socket
+            // buffer pressure. By deferring, only the latest configure per
+            // dispatch cycle is applied in single_iteration.
+            self.window_compositor_updates[pos].pending_configure = Some(configure);
+        }
 
         // NOTE: configure demands wl_surface::commit, however winit doesn't commit on behalf of the
         // users, since it can break a lot of things, thus it'll ask users to redraw instead.
@@ -465,7 +508,7 @@ impl ProvidesRegistryState for WinitState {
 }
 
 // The window update coming from the compositor.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct WindowCompositorUpdate {
     /// The id of the window this updates belongs to.
     pub window_id: WindowId,
@@ -478,11 +521,23 @@ pub struct WindowCompositorUpdate {
 
     /// Close the window.
     pub close_window: bool,
+
+    /// Pending configure to apply. When multiple configures arrive in one
+    /// dispatch cycle (e.g. during animated resize), only the latest is stored
+    /// and applied once, avoiding hundreds of intermediate resize/geometry
+    /// writes that can overflow the Wayland socket buffer.
+    pub pending_configure: Option<WindowConfigure>,
 }
 
 impl WindowCompositorUpdate {
     fn new(window_id: WindowId) -> Self {
-        Self { window_id, resized: false, scale_changed: false, close_window: false }
+        Self {
+            window_id,
+            resized: false,
+            scale_changed: false,
+            close_window: false,
+            pending_configure: None,
+        }
     }
 }
 

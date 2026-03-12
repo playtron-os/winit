@@ -287,14 +287,22 @@ impl<T: 'static> EventLoop<T> {
             // once we have a protocol error, we could get stuck retrying...
             if let Err(err) = self.connection.flush() {
                 use sctk::reexports::client::backend::WaylandError as BackendError;
+                tracing::error!(
+                    "Wayland flush error: {:?} (kind={:?})",
+                    err,
+                    match &err {
+                        BackendError::Io(e) => Some(e.kind()),
+                        _ => None,
+                    }
+                );
                 match err {
                     // BrokenPipe (EPIPE) can occur transiently during rapid
                     // window state transitions (e.g. maximize/unmaximize).
                     // Retry once rather than immediately exiting.
                     BackendError::Io(ref e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
                         warn!("Wayland flush got broken pipe, retrying once");
-                        if self.connection.flush().is_err() {
-                            warn!("Wayland flush retry also failed, exiting");
+                        if let Err(retry_err) = self.connection.flush() {
+                            tracing::error!("Wayland flush retry error: {:?}", retry_err);
                             self.set_exit_code(1);
                             return;
                         }
@@ -307,6 +315,7 @@ impl<T: 'static> EventLoop<T> {
                 }
             }
 
+            let dispatch_start = Instant::now();
             if let Err(error) = self.loop_dispatch(timeout) {
                 // NOTE We exit on errors from dispatches, since if we've got protocol error
                 // libwayland-client/wayland-rs will inform us anyway, but crashing downstream is
@@ -315,9 +324,20 @@ impl<T: 'static> EventLoop<T> {
                 // terminated, but winit doesn't provide us with an API to do that
                 // via some event. Still, we set the exit code to the error's OS
                 // error code, or to 1 if not possible.
+                tracing::error!(
+                    "loop_dispatch error: {:?} (os_error={:?})",
+                    error,
+                    error.raw_os_error()
+                );
                 let exit_code = error.raw_os_error().unwrap_or(1);
                 self.set_exit_code(exit_code);
                 return;
+            }
+            let dispatch_elapsed = dispatch_start.elapsed();
+            if dispatch_elapsed.as_millis() > 100 {
+                tracing::warn!("loop_dispatch took {:?}", dispatch_elapsed);
+            } else if dispatch_elapsed.as_millis() > 16 {
+                tracing::debug!("loop_dispatch took {:?}", dispatch_elapsed);
             }
 
             // NB: `StartCause::Init` is handled as a special case and doesn't need
@@ -379,6 +399,35 @@ impl<T: 'static> EventLoop<T> {
 
         // Drain the pending compositor updates.
         self.with_state(|state| compositor_updates.append(&mut state.window_compositor_updates));
+
+        // Apply any pending configures. During animated resize, many configures
+        // may arrive in one dispatch cycle. We deferred processing to here so
+        // that only the latest configure per window is applied, avoiding
+        // hundreds of intermediate set_window_geometry writes per dispatch cycle.
+        for compositor_update in compositor_updates.iter_mut() {
+            if let Some(configure) = compositor_update.pending_configure.take() {
+                let window_id = compositor_update.window_id;
+                tracing::debug!(
+                    "single_iteration: applying deferred configure for window={:?} size=({:?},{:?}) state={:?}",
+                    window_id,
+                    configure.new_size.0.map(|v| v.get()),
+                    configure.new_size.1.map(|v| v.get()),
+                    configure.state,
+                );
+                let resized = self.with_state(|state| {
+                    state
+                        .windows
+                        .get_mut()
+                        .get_mut(&window_id)
+                        .expect("got configure for dead window.")
+                        .lock()
+                        .unwrap()
+                        .configure(configure, &state.shm, &state.subcompositor_state)
+                });
+                tracing::debug!("single_iteration: configure applied, resized={}", resized);
+                compositor_update.resized |= resized;
+            }
+        }
 
         for mut compositor_update in compositor_updates.drain(..) {
             let window_id = compositor_update.window_id;
@@ -449,6 +498,7 @@ impl<T: 'static> EventLoop<T> {
                     size
                 });
 
+                let resize_callback_start = Instant::now();
                 callback(
                     Event::WindowEvent {
                         window_id: crate::window::WindowId(window_id),
@@ -456,6 +506,13 @@ impl<T: 'static> EventLoop<T> {
                     },
                     &self.window_target,
                 );
+                let resize_callback_elapsed = resize_callback_start.elapsed();
+                if resize_callback_elapsed.as_millis() > 1 {
+                    tracing::warn!(
+                        "single_iteration: Resized callback took {:?}",
+                        resize_callback_elapsed,
+                    );
+                }
             }
 
             if compositor_update.close_window {

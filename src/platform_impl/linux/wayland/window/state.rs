@@ -754,6 +754,11 @@ impl WindowState {
 
     /// Resize the window to the new inner size.
     fn resize(&mut self, inner_size: LogicalSize<u32>) {
+        tracing::debug!(
+            "resize: old_size={:?} -> new_size={:?}",
+            self.size,
+            inner_size,
+        );
         self.size = inner_size;
 
         // Update the stateless size.
@@ -780,6 +785,10 @@ impl WindowState {
         self.reload_transparency_hint();
 
         // Set the window geometry.
+        tracing::debug!(
+            "resize: set_window_geometry({}, {}, {}, {})",
+            x, y, outer_size.width, outer_size.height,
+        );
         self.window.xdg_surface().set_window_geometry(
             x,
             y,
@@ -789,6 +798,7 @@ impl WindowState {
 
         // Update the target viewport, this is used if and only if fractional scaling is in use.
         if let Some(viewport) = self.viewport.as_ref() {
+            tracing::debug!("resize: set_viewport_destination({}, {})", self.size.width, self.size.height);
             // Set inner size without the borders.
             viewport.set_destination(self.size.width as _, self.size.height as _);
         }
