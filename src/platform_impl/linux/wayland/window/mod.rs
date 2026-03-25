@@ -612,12 +612,6 @@ impl Window {
         self.window_state.lock().unwrap().unregister_voice_mode()
     }
 
-    /// Set the audio level for voice mode visualization.
-    #[inline]
-    pub fn set_voice_audio_level(&self, level: u32) -> bool {
-        self.window_state.lock().unwrap().set_voice_audio_level(level)
-    }
-
     /// Acknowledge a will_stop event from the compositor.
     #[inline]
     pub fn voice_ack_stop(&self, serial: u32, freeze: bool) -> bool {

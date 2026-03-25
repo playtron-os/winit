@@ -3,10 +3,10 @@
 //! This protocol allows clients to embed foreign toplevel windows within their
 //! own surfaces. The embedded surface can be interactive or display-only.
 
+use sctk::globals::GlobalData;
 use sctk::reexports::client::globals::{BindError, GlobalList};
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
 use sctk::reexports::client::{delegate_dispatch, Connection, Dispatch, Proxy, QueueHandle};
-use sctk::globals::GlobalData;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info};
 
@@ -55,10 +55,7 @@ pub struct EmbeddedSurfaceData {
 
 impl EmbeddedSurfaceData {
     fn new() -> Self {
-        Self {
-            events: Vec::new(),
-            valid: true,
-        }
+        Self { events: Vec::new(), valid: true }
     }
 }
 
@@ -131,10 +128,7 @@ impl CosmicSurfaceEmbedManager {
             queue_handle,
             data.clone(),
         );
-        info!(
-            "Created embedded surface for PID {} (app_id hint: '{}')",
-            pid, app_id
-        );
+        info!("Created embedded surface for PID {} (app_id hint: '{}')", pid, app_id);
         EmbeddedSurface { embedded, data }
     }
 }
@@ -148,10 +142,7 @@ impl EmbeddedSurface {
     /// * `width` - Width of the embed region (must be positive)
     /// * `height` - Height of the embed region (must be positive)
     pub fn set_geometry(&self, x: i32, y: i32, width: i32, height: i32) {
-        debug!(
-            "Setting embed geometry: ({}, {}, {}, {})",
-            x, y, width, height
-        );
+        debug!("Setting embed geometry: ({}, {}, {}, {})", x, y, width, height);
         self.embedded.set_geometry(x, y, width, height);
     }
 
@@ -184,13 +175,18 @@ impl EmbeddedSurface {
     /// * `top_right` - Top-right corner radius
     /// * `bottom_right` - Bottom-right corner radius
     /// * `bottom_left` - Bottom-left corner radius
-    pub fn set_corner_radius(&self, top_left: u32, top_right: u32, bottom_right: u32, bottom_left: u32) {
+    pub fn set_corner_radius(
+        &self,
+        top_left: u32,
+        top_right: u32,
+        bottom_right: u32,
+        bottom_left: u32,
+    ) {
         debug!(
             "Setting embed corner radius: [{}, {}, {}, {}]",
             top_left, top_right, bottom_right, bottom_left
         );
-        self.embedded
-            .set_corner_radius(top_left, top_right, bottom_right, bottom_left);
+        self.embedded.set_corner_radius(top_left, top_right, bottom_right, bottom_left);
     }
 
     /// Set anchor-based positioning for the embedded surface.
@@ -296,30 +292,28 @@ impl Dispatch<ZcosmicEmbeddedSurfaceV1, Arc<Mutex<EmbeddedSurfaceData>>, WinitSt
         match event {
             protocol::zcosmic_embedded_surface_v1::Event::Configure { width, height } => {
                 debug!("Embedded surface configure: {}x{}", width, height);
-                data.events
-                    .push(EmbeddedSurfaceEvent::Configure { width, height });
-            }
+                data.events.push(EmbeddedSurfaceEvent::Configure { width, height });
+            },
             protocol::zcosmic_embedded_surface_v1::Event::Frame => {
                 debug!("Embedded surface frame");
                 data.events.push(EmbeddedSurfaceEvent::Frame);
-            }
+            },
             protocol::zcosmic_embedded_surface_v1::Event::Closed => {
                 info!("Embedded surface closed");
                 data.valid = false;
                 data.events.push(EmbeddedSurfaceEvent::Closed);
-            }
+            },
             protocol::zcosmic_embedded_surface_v1::Event::Entered => {
                 debug!("Pointer entered embed region");
                 data.events.push(EmbeddedSurfaceEvent::Entered);
-            }
+            },
             protocol::zcosmic_embedded_surface_v1::Event::Left => {
                 debug!("Pointer left embed region");
                 data.events.push(EmbeddedSurfaceEvent::Left);
-            }
+            },
         }
     }
 }
 
 delegate_dispatch!(WinitState: [ZcosmicSurfaceEmbedManagerV1: GlobalData] => CosmicSurfaceEmbedManager);
 delegate_dispatch!(WinitState: [ZcosmicEmbeddedSurfaceV1: Arc<Mutex<EmbeddedSurfaceData>>] => CosmicSurfaceEmbedManager);
-

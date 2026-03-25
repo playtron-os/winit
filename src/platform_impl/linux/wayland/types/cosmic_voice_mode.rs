@@ -77,7 +77,7 @@ pub enum VoiceModeEvent {
     WillStop {
         /// Serial to echo back in ack_stop
         serial: u32,
-        },
+    },
     /// Focus the input field (sent on tap)
     FocusInput,
 }
@@ -163,14 +163,6 @@ impl VoiceModeReceiver {
     /// Check if this is the default receiver.
     pub fn is_default(&self) -> bool {
         self.is_default
-    }
-
-    /// Set the audio level for voice mode visualization.
-    ///
-    /// # Arguments
-    /// * `level` - Audio level from 0-1000, where 0 is silence and 1000 is maximum.
-    pub fn set_audio_level(&self, level: u32) {
-        self.receiver.set_audio_level(level);
     }
 
     /// Acknowledge a will_stop event from the compositor.

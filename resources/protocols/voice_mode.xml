@@ -103,15 +103,6 @@
       </description>
     </request>
 
-    <request name="set_audio_level">
-      <description summary="set audio input level for visualization">
-        Set the current audio input level for voice mode visualization.
-        The compositor uses this to animate the orb based on voice activity.
-        Clients should send this periodically while recording (e.g., 20-30Hz).
-      </description>
-      <arg name="level" type="uint" summary="audio level 0-1000, where 0 is silence and 1000 is max"/>
-    </request>
-
     <request name="ack_stop">
       <description summary="acknowledge will_stop and decide whether to freeze">
         Respond to a will_stop event from the compositor. The client must send

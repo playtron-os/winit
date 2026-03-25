@@ -754,11 +754,7 @@ impl WindowState {
 
     /// Resize the window to the new inner size.
     fn resize(&mut self, inner_size: LogicalSize<u32>) {
-        tracing::debug!(
-            "resize: old_size={:?} -> new_size={:?}",
-            self.size,
-            inner_size,
-        );
+        tracing::debug!("resize: old_size={:?} -> new_size={:?}", self.size, inner_size,);
         self.size = inner_size;
 
         // Update the stateless size.
@@ -787,7 +783,10 @@ impl WindowState {
         // Set the window geometry.
         tracing::debug!(
             "resize: set_window_geometry({}, {}, {}, {})",
-            x, y, outer_size.width, outer_size.height,
+            x,
+            y,
+            outer_size.width,
+            outer_size.height,
         );
         self.window.xdg_surface().set_window_geometry(
             x,
@@ -798,7 +797,11 @@ impl WindowState {
 
         // Update the target viewport, this is used if and only if fractional scaling is in use.
         if let Some(viewport) = self.viewport.as_ref() {
-            tracing::debug!("resize: set_viewport_destination({}, {})", self.size.width, self.size.height);
+            tracing::debug!(
+                "resize: set_viewport_destination({}, {})",
+                self.size.width,
+                self.size.height
+            );
             // Set inner size without the borders.
             viewport.set_destination(self.size.width as _, self.size.height as _);
         }
@@ -1393,20 +1396,6 @@ impl WindowState {
         if let Some(receiver) = self.voice_mode_receiver.take() {
             receiver.destroy();
             tracing::info!("Unregistered window as voice mode receiver");
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Set the audio level for voice mode visualization.
-    ///
-    /// # Arguments
-    /// * `level` - Audio level from 0-1000, where 0 is silence and 1000 is maximum.
-    #[inline]
-    pub fn set_voice_audio_level(&mut self, level: u32) -> bool {
-        if let Some(receiver) = self.voice_mode_receiver.as_ref() {
-            receiver.set_audio_level(level);
             true
         } else {
             false

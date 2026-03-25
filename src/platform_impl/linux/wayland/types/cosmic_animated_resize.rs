@@ -3,10 +3,10 @@
 //! This protocol allows clients to request smooth animated window resizes.
 //! The compositor sends intermediate configure events for smooth animation.
 
+use sctk::globals::GlobalData;
 use sctk::reexports::client::globals::{BindError, GlobalList};
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
 use sctk::reexports::client::{delegate_dispatch, Connection, Dispatch, Proxy, QueueHandle};
-use sctk::globals::GlobalData;
 
 use crate::platform_impl::wayland::state::WinitState;
 
@@ -87,8 +87,7 @@ impl AnimatedResizeController {
         height: i32,
         duration_ms: u32,
     ) {
-        self.controller
-            .resize_to_with_position(x, y, width, height, duration_ms);
+        self.controller.resize_to_with_position(x, y, width, height, duration_ms);
     }
 
     /// Destroy this controller.
@@ -106,7 +105,9 @@ impl Drop for AnimatedResizeController {
 
 // Dispatch implementations
 
-impl Dispatch<ZcosmicAnimatedResizeManagerV1, GlobalData, WinitState> for CosmicAnimatedResizeManager {
+impl Dispatch<ZcosmicAnimatedResizeManagerV1, GlobalData, WinitState>
+    for CosmicAnimatedResizeManager
+{
     fn event(
         _state: &mut WinitState,
         _proxy: &ZcosmicAnimatedResizeManagerV1,
@@ -131,10 +132,10 @@ impl Dispatch<ZcosmicAnimatedResizeV1, (), WinitState> for CosmicAnimatedResizeM
         match event {
             protocol::zcosmic_animated_resize_v1::Event::Done => {
                 tracing::debug!("Animated resize completed");
-            }
+            },
             protocol::zcosmic_animated_resize_v1::Event::Cancelled => {
                 tracing::debug!("Animated resize cancelled");
-            }
+            },
         }
     }
 }

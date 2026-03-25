@@ -4,10 +4,10 @@
 //! When exclusive mode is enabled, the compositor will minimize all other
 //! toplevel windows on the same output. When disabled, they are restored.
 
+use sctk::globals::GlobalData;
 use sctk::reexports::client::globals::{BindError, GlobalList};
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
 use sctk::reexports::client::{delegate_dispatch, Connection, Dispatch, Proxy, QueueHandle};
-use sctk::globals::GlobalData;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -121,7 +121,9 @@ impl Drop for ExclusiveModeController {
 
 // Dispatch implementations
 
-impl Dispatch<ZcosmicExclusiveModeManagerV1, GlobalData, WinitState> for CosmicExclusiveModeManager {
+impl Dispatch<ZcosmicExclusiveModeManagerV1, GlobalData, WinitState>
+    for CosmicExclusiveModeManager
+{
     fn event(
         _state: &mut WinitState,
         _proxy: &ZcosmicExclusiveModeManagerV1,
@@ -134,7 +136,9 @@ impl Dispatch<ZcosmicExclusiveModeManagerV1, GlobalData, WinitState> for CosmicE
     }
 }
 
-impl Dispatch<ZcosmicExclusiveModeV1, Arc<ExclusiveModeState>, WinitState> for CosmicExclusiveModeManager {
+impl Dispatch<ZcosmicExclusiveModeV1, Arc<ExclusiveModeState>, WinitState>
+    for CosmicExclusiveModeManager
+{
     fn event(
         _state: &mut WinitState,
         _proxy: &ZcosmicExclusiveModeV1,
@@ -149,17 +153,17 @@ impl Dispatch<ZcosmicExclusiveModeV1, Arc<ExclusiveModeState>, WinitState> for C
                 data.enabled.store(true, Ordering::SeqCst);
                 data.affected_count.store(count, Ordering::SeqCst);
                 data.failed.store(false, Ordering::SeqCst);
-            }
+            },
             protocol::zcosmic_exclusive_mode_v1::Event::Disabled { count } => {
                 tracing::debug!(count, "Exclusive mode disabled");
                 data.enabled.store(false, Ordering::SeqCst);
                 data.affected_count.store(count, Ordering::SeqCst);
                 data.failed.store(false, Ordering::SeqCst);
-            }
+            },
             protocol::zcosmic_exclusive_mode_v1::Event::Failed { reason } => {
                 tracing::warn!(reason, "Exclusive mode request failed");
                 data.failed.store(true, Ordering::SeqCst);
-            }
+            },
         }
     }
 }

@@ -412,12 +412,6 @@ pub trait WindowExtWayland {
     /// Unregister this window as a voice mode receiver.
     fn unregister_voice_mode(&self) -> bool;
 
-    /// Set the audio level for voice mode visualization.
-    ///
-    /// # Arguments
-    /// * `level` - Audio level from 0-1000, where 0 is silence and 1000 is maximum.
-    fn set_voice_audio_level(&self, level: u32) -> bool;
-
     /// Acknowledge a will_stop event from the compositor.
     ///
     /// This responds to a will_stop event, telling the compositor whether to
@@ -723,16 +717,6 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.unregister_voice_mode(),
-        }
-    }
-
-    #[inline]
-    fn set_voice_audio_level(&self, level: u32) -> bool {
-        match &self.window {
-            #[cfg(x11_platform)]
-            crate::platform_impl::Window::X(_) => false,
-            #[cfg(wayland_platform)]
-            crate::platform_impl::Window::Wayland(window) => window.set_voice_audio_level(level),
         }
     }
 

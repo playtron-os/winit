@@ -139,7 +139,7 @@ impl Dispatch<ZcosmicTooltipV1, TooltipObjectData, WinitState> for CosmicTooltip
         match event {
             protocol::zcosmic_tooltip_v1::Event::Reposition { x, y } => {
                 tracing::trace!("Tooltip repositioned: ({}, {})", x, y);
-            }
+            },
         }
     }
 }
