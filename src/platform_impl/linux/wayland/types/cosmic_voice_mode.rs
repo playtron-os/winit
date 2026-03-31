@@ -265,7 +265,11 @@ impl Dispatch<ZcosmicVoiceModeV1, Arc<VoiceModeState>, WinitState> for CosmicVoi
                 data.push_event(VoiceModeEvent::OrbDetached);
             },
             protocol::zcosmic_voice_mode_v1::Event::WillStop { serial } => {
-                tracing::debug!(serial, "Voice mode will_stop received");
+                tracing::debug!(
+                    serial,
+                    "Voice mode will_stop received, auto-responding ack_stop(freeze=true)"
+                );
+                _proxy.ack_stop(serial, 1);
                 data.push_event(VoiceModeEvent::WillStop { serial });
             },
             protocol::zcosmic_voice_mode_v1::Event::FocusInput => {
