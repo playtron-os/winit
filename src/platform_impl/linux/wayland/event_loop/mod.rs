@@ -838,7 +838,7 @@ impl ActiveEventLoop {
     /// - The parent window doesn't exist
     /// - The compositor doesn't support xdg_popup
     pub fn create_popup(&self, settings: PopupSettings) -> Option<PopupId> {
-        use sctk::compositor::Surface;
+        use sctk::compositor::{Region, Surface};
         use sctk::shell::xdg::{XdgPositioner, XdgSurface as XdgSurfaceTrait};
         use sctk::shell::WaylandSurface;
 
@@ -955,6 +955,21 @@ impl ActiveEventLoop {
                 settings.size.0 as i32,
                 settings.size.1 as i32,
             );
+        }
+
+        // Restrict the input region to the visible content (the window geometry
+        // rect) so the transparent shadow padding around the popup does not
+        // capture pointer input. Without this, a click landing on the padding
+        // ring counts as "inside" the popup surface and is swallowed instead of
+        // dismissing the grab — making it impossible to click just outside the
+        // visible menu to trigger a new action. Uses the same surface-local
+        // logical coordinates as set_window_geometry above; copy semantics let
+        // the region be dropped right after the request.
+        if let Some((gx, gy, gw, gh)) = settings.window_geometry {
+            if let Ok(region) = Region::new(&*state.compositor_state) {
+                region.add(gx, gy, gw, gh);
+                popup.wl_surface().set_input_region(Some(region.wl_region()));
+            }
         }
 
         // Commit the surface to trigger configure
