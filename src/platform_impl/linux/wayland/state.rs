@@ -43,6 +43,7 @@ use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScali
 use crate::platform_impl::wayland::types::wp_viewporter::ViewporterState;
 use crate::platform_impl::wayland::types::xdg_activation::XdgActivationState;
 use crate::platform_impl::wayland::types::xdg_popup::{PopupEvent, PopupId, PopupState};
+use crate::platform_impl::wayland::types::xdg_toplevel_icon::ToplevelIconManager;
 use crate::platform_impl::wayland::window::{WindowRequests, WindowState};
 use crate::platform_impl::wayland::{WaylandError, WindowId};
 use crate::platform_impl::OsError;
@@ -115,6 +116,9 @@ pub struct WinitState {
 
     /// Fractional scaling manager.
     pub fractional_scaling_manager: Option<FractionalScalingManager>,
+
+    /// xdg-toplevel-icon manager (per-window title-bar icon).
+    pub toplevel_icon_manager: Option<ToplevelIconManager>,
 
     /// KWin blur manager.
     pub kwin_blur_manager: Option<KWinBlurManager>,
@@ -222,6 +226,7 @@ impl WinitState {
             window_events_sink: Default::default(),
             viewporter_state,
             fractional_scaling_manager,
+            toplevel_icon_manager: ToplevelIconManager::new(globals, queue_handle).ok(),
             kwin_blur_manager: KWinBlurManager::new(globals, queue_handle).ok(),
             animated_resize_manager: CosmicAnimatedResizeManager::new(globals, queue_handle).ok(),
             corner_radius_manager: CosmicCornerRadiusManager::new(globals, queue_handle).ok(),

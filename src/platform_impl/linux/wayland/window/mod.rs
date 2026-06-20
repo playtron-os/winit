@@ -32,6 +32,7 @@ use super::event_loop::sink::EventSink;
 use super::output::MonitorHandle;
 use super::state::WinitState;
 use super::types::xdg_activation::XdgActivationTokenData;
+use super::types::xdg_toplevel_icon::WindowToplevelIcon;
 use super::{ActiveEventLoop, WaylandError, WindowId};
 
 pub(crate) mod state;
@@ -58,6 +59,9 @@ pub struct Window {
 
     /// Xdg activation to request user attention.
     xdg_activation: Option<XdgActivationV1>,
+
+    /// Per-window xdg-toplevel-icon setter, if the compositor supports it.
+    toplevel_icon: Option<Mutex<WindowToplevelIcon>>,
 
     /// The state of the requested attention from the `xdg_activation`.
     attention_requested: Arc<AtomicBool>,
@@ -92,6 +96,11 @@ impl Window {
         let compositor = state.compositor_state.clone();
         let xdg_activation =
             state.xdg_activation.as_ref().map(|activation_state| activation_state.global().clone());
+        let toplevel_icon = state
+            .toplevel_icon_manager
+            .as_ref()
+            .and_then(|manager| manager.icon_for_window(&state.shm))
+            .map(Mutex::new);
         let display = event_loop_window_target.connection.display();
 
         let size: Size = attributes.inner_size.unwrap_or(LogicalSize::new(800., 600.).into());
@@ -219,6 +228,7 @@ impl Window {
             window_state,
             queue_handle,
             xdg_activation,
+            toplevel_icon,
             attention_requested: Arc::new(AtomicBool::new(false)),
             event_loop_awakener,
             window_requests,
@@ -680,7 +690,14 @@ impl Window {
     pub fn set_window_level(&self, _level: WindowLevel) {}
 
     #[inline]
-    pub(crate) fn set_window_icon(&self, _window_icon: Option<PlatformIcon>) {}
+    pub(crate) fn set_window_icon(&self, window_icon: Option<PlatformIcon>) {
+        let Some(toplevel_icon) = self.toplevel_icon.as_ref() else {
+            // Compositor doesn't support xdg-toplevel-icon.
+            return;
+        };
+        let icon = window_icon.as_ref().map(|icon| (icon.rgba.as_slice(), icon.width, icon.height));
+        toplevel_icon.lock().unwrap().set(self.window.xdg_toplevel(), icon, &self.queue_handle);
+    }
 
     #[inline]
     pub fn set_minimized(&self, minimized: bool) {
