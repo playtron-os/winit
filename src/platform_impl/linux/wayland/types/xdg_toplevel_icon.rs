@@ -40,7 +40,11 @@ impl ToplevelIconManager {
 
 /// Per-window holder for the toplevel icon. Keeps the committed icon object and
 /// its backing buffer alive until replaced — the compositor references the
-/// buffer for as long as it is the current icon.
+/// buffer for as long as it is the current icon. Teardown (replace, clear, or
+/// window close) goes through [`clear_current`], which destroys the icon object
+/// before its buffer as the protocol requires.
+///
+/// [`clear_current`]: WindowToplevelIcon::clear_current
 #[derive(Debug)]
 pub struct WindowToplevelIcon {
     manager: XdgToplevelIconManagerV1,
@@ -60,7 +64,7 @@ impl WindowToplevelIcon {
     ) {
         let Some((rgba, width, height)) = icon else {
             self.manager.set_icon(toplevel, None);
-            self.current = None;
+            self.clear_current();
             return;
         };
 
@@ -97,9 +101,39 @@ impl WindowToplevelIcon {
         let xdg_icon = self.manager.create_icon(queue_handle, GlobalData);
         xdg_icon.add_buffer(buffer.wl_buffer(), 1);
         self.manager.set_icon(toplevel, Some(&xdg_icon));
-        // Replacing `current` drops the previous icon + buffer, which is safe
-        // now that the new one has been committed as the toplevel's icon.
+        // Tear down the previous icon now that the new one has been committed as
+        // the toplevel's icon — destroying the old icon object *before* its
+        // buffer (see `clear_current`). Only then publish the new pair.
+        self.clear_current();
         self.current = Some((xdg_icon, buffer));
+    }
+
+    /// Tear down the current icon in the order the protocol requires: destroy
+    /// the `xdg_toplevel_icon_v1` object first, then release its backing buffer.
+    ///
+    /// xdg-toplevel-icon-v1 mandates that the wl_buffer outlive the icon object
+    /// it is attached to (raising `no_buffer` otherwise). Wayland proxies do
+    /// **not** emit their `destroy` request on `Drop`, so dropping the pair
+    /// would leave the server-side icon alive while sctk's `Buffer::drop` sends
+    /// `wl_buffer.destroy` — the compositor then sees the buffer vanish from
+    /// under a live icon and kills us with a protocol error. Destroying the
+    /// icon explicitly here, before the buffer drops, keeps the order legal.
+    fn clear_current(&mut self) {
+        if let Some((icon, _buffer)) = self.current.take() {
+            icon.destroy();
+            // `_buffer` drops at end of scope, after the icon is destroyed.
+        }
+    }
+}
+
+impl Drop for WindowToplevelIcon {
+    fn drop(&mut self) {
+        // On window close the whole holder is dropped (buffer + pool included).
+        // Destroy the icon object first so the compositor never sees the buffer
+        // destroyed from under a still-live icon (xdg-toplevel-icon-v1
+        // `no_buffer`). Field drop order alone can't guarantee this — proxies
+        // don't `destroy` on `Drop` — so do it explicitly.
+        self.clear_current();
     }
 }
 
