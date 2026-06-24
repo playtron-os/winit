@@ -15,7 +15,10 @@ use sctk::reexports::client::{Connection, Proxy, QueueHandle};
 use sctk::reexports::csd_frame::{
     DecorationsFrame, FrameAction, FrameClick, ResizeEdge, WindowState as XdgWindowState,
 };
+use sctk::globals::GlobalData;
 use sctk::reexports::protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::WpFractionalScaleV1;
+use sctk::reexports::protocols::wp::keyboard_shortcuts_inhibit::zv1::client::zwp_keyboard_shortcuts_inhibit_manager_v1::ZwpKeyboardShortcutsInhibitManagerV1;
+use sctk::reexports::protocols::wp::keyboard_shortcuts_inhibit::zv1::client::zwp_keyboard_shortcuts_inhibitor_v1::ZwpKeyboardShortcutsInhibitorV1;
 use sctk::reexports::protocols::wp::text_input::zv3::client::zwp_text_input_v3::ZwpTextInputV3;
 use sctk::reexports::protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use sctk::reexports::protocols::xdg::shell::client::xdg_toplevel::ResizeEdge as XdgResizeEdge;
@@ -115,6 +118,12 @@ pub struct WindowState {
     /// The text inputs observed on the window.
     text_inputs: Vec<ZwpTextInputV3>,
 
+    /// Keyboard-shortcuts-inhibit manager + seat captured at creation, and the
+    /// active inhibitor while the app is capturing keys.
+    keyboard_shortcuts_inhibit_manager: Option<ZwpKeyboardShortcutsInhibitManagerV1>,
+    keyboard_shortcuts_inhibit_seat: Option<WlSeat>,
+    keyboard_shortcuts_inhibitor: Option<ZwpKeyboardShortcutsInhibitorV1>,
+
     /// The inner size of the window, as in without client side decorations.
     size: LogicalSize<u32>,
 
@@ -213,6 +222,12 @@ impl WindowState {
             stateless_size: initial_size.to_logical(1.),
             initial_size: Some(initial_size),
             text_inputs: Vec::new(),
+            keyboard_shortcuts_inhibit_manager: winit_state
+                .keyboard_shortcuts_inhibit_state
+                .as_ref()
+                .map(|s| s.manager()),
+            keyboard_shortcuts_inhibit_seat: winit_state.seat_state.seats().next(),
+            keyboard_shortcuts_inhibitor: None,
             theme,
             title: String::default(),
             transparent: false,
@@ -940,6 +955,30 @@ impl WindowState {
     #[inline]
     pub fn remove_seat_focus(&mut self, seat: &ObjectId) {
         self.seat_focus.remove(seat);
+    }
+
+    /// Create or destroy a keyboard-shortcuts inhibitor for this window. While
+    /// active, the compositor forwards its reserved keys (e.g. Super) to us
+    /// instead of handling them as global shortcuts — needed for key capture.
+    pub fn set_keyboard_shortcuts_inhibit(&mut self, inhibit: bool) {
+        if inhibit {
+            if self.keyboard_shortcuts_inhibitor.is_none() {
+                if let (Some(manager), Some(seat)) = (
+                    self.keyboard_shortcuts_inhibit_manager.as_ref(),
+                    self.keyboard_shortcuts_inhibit_seat.as_ref(),
+                ) {
+                    let inhibitor = manager.inhibit_shortcuts(
+                        self.window.wl_surface(),
+                        seat,
+                        &self.queue_handle,
+                        GlobalData,
+                    );
+                    self.keyboard_shortcuts_inhibitor = Some(inhibitor);
+                }
+            }
+        } else if let Some(inhibitor) = self.keyboard_shortcuts_inhibitor.take() {
+            inhibitor.destroy();
+        }
     }
 
     /// Returns `true` if the requested state was applied.

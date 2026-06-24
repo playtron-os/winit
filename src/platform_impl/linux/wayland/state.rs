@@ -26,8 +26,8 @@ use sctk::subcompositor::SubcompositorState;
 use crate::platform_impl::wayland::event_loop::sink::EventSink;
 use crate::platform_impl::wayland::output::MonitorHandle;
 use crate::platform_impl::wayland::seat::{
-    PointerConstraintsState, RelativePointerState, TextInputState, WinitPointerData,
-    WinitPointerDataExt, WinitSeatState,
+    KeyboardShortcutsInhibitState, PointerConstraintsState, RelativePointerState, TextInputState,
+    WinitPointerData, WinitPointerDataExt, WinitSeatState,
 };
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScalingManager;
@@ -83,6 +83,9 @@ pub struct WinitState {
 
     /// The state of the text input on the client.
     pub text_input_state: Option<TextInputState>,
+
+    /// The keyboard-shortcuts-inhibit manager, for capturing compositor-reserved keys.
+    pub keyboard_shortcuts_inhibit_state: Option<KeyboardShortcutsInhibitState>,
 
     /// Observed monitors.
     pub monitors: Arc<Mutex<Vec<MonitorHandle>>>,
@@ -180,6 +183,11 @@ impl WinitState {
 
             seats,
             text_input_state: TextInputState::new(globals, queue_handle).ok(),
+            keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState::new(
+                globals,
+                queue_handle,
+            )
+            .ok(),
 
             relative_pointer: RelativePointerState::new(globals, queue_handle).ok(),
             pointer_constraints: PointerConstraintsState::new(globals, queue_handle)

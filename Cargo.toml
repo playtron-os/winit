@@ -272,6 +272,7 @@ wayland-backend = { version = "0.3.5", default-features = false, features = [
 wayland-client = { version = "0.31.4", optional = true }
 wayland-protocols = { version = "0.32.2", features = [
     "staging",
+    "unstable",
 ], optional = true }
 wayland-protocols-plasma = { version = "0.3.2", features = [
     "client",

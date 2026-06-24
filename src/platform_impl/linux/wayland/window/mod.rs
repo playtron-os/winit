@@ -238,6 +238,13 @@ impl Window {
     }
 
     #[inline]
+    pub fn set_keyboard_shortcuts_inhibit(&self, inhibit: bool) {
+        self.window_state.lock().unwrap().set_keyboard_shortcuts_inhibit(inhibit);
+        // Wake the loop so the create/destroy request is flushed promptly.
+        self.event_loop_awakener.ping();
+    }
+
+    #[inline]
     pub fn set_visible(&self, _visible: bool) {
         // Not possible on Wayland.
     }
