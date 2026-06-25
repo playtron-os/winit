@@ -489,6 +489,18 @@ pub trait WindowExtWayland {
     /// * `mime_type` - The MIME type to request (must be one of the types
     ///   offered in the `DndWindowEvent::Enter` event).
     fn dnd_request_data(&self, mime_type: &str);
+
+    /// Inhibit (or release) the compositor's global keyboard shortcuts for this
+    /// window.
+    ///
+    /// While inhibited, the compositor delivers **all** key events — including
+    /// its own reserved combos such as `Super` — to this window instead of
+    /// handling them as global shortcuts. This is what a key-capture /
+    /// shortcut-recording UI needs; release it as soon as capture ends.
+    ///
+    /// No-op on X11 (which already delivers all keys to the focused window) or
+    /// if the compositor lacks `zwp_keyboard_shortcuts_inhibit_manager_v1`.
+    fn set_keyboard_shortcuts_inhibit(&self, inhibit: bool);
 }
 
 impl WindowExtWayland for Window {
@@ -802,6 +814,18 @@ impl WindowExtWayland for Window {
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => {
                 window.dnd_request_data(mime_type);
+            },
+        }
+    }
+
+    #[inline]
+    fn set_keyboard_shortcuts_inhibit(&self, inhibit: bool) {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => {},
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.set_keyboard_shortcuts_inhibit(inhibit);
             },
         }
     }

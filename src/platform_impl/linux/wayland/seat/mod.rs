@@ -20,10 +20,12 @@ use crate::keyboard::ModifiersState;
 use crate::platform_impl::wayland::state::WinitState;
 
 mod keyboard;
+mod keyboard_shortcuts_inhibit;
 mod pointer;
 mod text_input;
 mod touch;
 
+pub use keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState;
 pub use pointer::relative_pointer::RelativePointerState;
 pub use pointer::{PointerConstraintsState, WinitPointerData, WinitPointerDataExt};
 pub use text_input::{TextInputState, ZwpTextInputV3Ext};
