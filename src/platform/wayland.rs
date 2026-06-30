@@ -841,6 +841,17 @@ pub trait WindowAttributesExtWayland {
     /// For details about application ID conventions, see the
     /// [Desktop Entry Spec](https://specifications.freedesktop.org/desktop-entry-spec/desktop-entry-spec-latest.html#desktop-file-id)
     fn with_name(self, general: impl Into<String>, instance: impl Into<String>) -> Self;
+
+    /// Parent this window to a foreign toplevel exported by another client.
+    ///
+    /// `handle` is an xdg-foreign handle (the bare handle string, without any
+    /// `wayland:` prefix) obtained by the other client via `zxdg_exporter_v2` —
+    /// for example the `parent_window` an xdg-desktop-portal `FileChooser`
+    /// backend receives. The window is imported via `zxdg_importer_v2` and set
+    /// as a child of that toplevel, so the compositor places it as a dialog over
+    /// the requesting application's window. No-op if the compositor lacks
+    /// `zxdg_importer_v2`.
+    fn with_wayland_parent(self, handle: impl Into<String>) -> Self;
 }
 
 impl WindowAttributesExtWayland for WindowAttributes {
@@ -848,6 +859,12 @@ impl WindowAttributesExtWayland for WindowAttributes {
     fn with_name(mut self, general: impl Into<String>, instance: impl Into<String>) -> Self {
         self.platform_specific.name =
             Some(crate::platform_impl::ApplicationName::new(general.into(), instance.into()));
+        self
+    }
+
+    #[inline]
+    fn with_wayland_parent(mut self, handle: impl Into<String>) -> Self {
+        self.platform_specific.wayland_parent = Some(handle.into());
         self
     }
 }

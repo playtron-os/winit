@@ -58,6 +58,7 @@ use crate::platform_impl::wayland::types::cosmic_voice_mode::{
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::wayland_dnd::{SharedDndOfferState, WaylandDndManager};
+use crate::platform_impl::wayland::types::xdg_foreign::ImportedToplevel;
 use crate::platform_impl::{PlatformCustomCursor, WindowId};
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
 
@@ -200,6 +201,11 @@ pub struct WindowState {
     /// Next embed ID for tracking.
     next_embed_id: u64,
 
+    /// xdg-foreign import that parents this window to a foreign toplevel.
+    /// Kept alive for the window's lifetime; dropping it removes the parent
+    /// relationship in the compositor.
+    xdg_imported_parent: Option<ImportedToplevel>,
+
     /// COSMIC voice mode manager.
     voice_mode_manager: Option<CosmicVoiceModeManager>,
     /// Active voice mode receiver for this window.
@@ -267,6 +273,7 @@ impl WindowState {
             surface_embed_manager: winit_state.surface_embed_manager.clone(),
             embedded_surfaces: std::collections::HashMap::new(),
             next_embed_id: 1,
+            xdg_imported_parent: None,
             voice_mode_manager: winit_state.voice_mode_manager.clone(),
             voice_mode_receiver: None,
             dnd_manager: winit_state.dnd_manager.clone(),
@@ -1989,6 +1996,12 @@ impl WindowState {
     pub fn set_transparent(&mut self, transparent: bool) {
         self.transparent = transparent;
         self.reload_transparency_hint();
+    }
+
+    /// Store the xdg-foreign import that parents this window to a foreign
+    /// toplevel, keeping it alive for the window's lifetime.
+    pub fn set_imported_parent(&mut self, imported: ImportedToplevel) {
+        self.xdg_imported_parent = Some(imported);
     }
 
     /// Register text input on the top-level.

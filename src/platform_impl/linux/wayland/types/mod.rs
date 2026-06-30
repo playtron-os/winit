@@ -13,5 +13,6 @@ pub mod wayland_dnd;
 pub mod wp_fractional_scaling;
 pub mod wp_viewporter;
 pub mod xdg_activation;
+pub mod xdg_foreign;
 pub mod xdg_popup;
 pub mod xdg_toplevel_icon;

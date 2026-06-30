@@ -73,6 +73,11 @@ impl ApplicationName {
 pub struct PlatformSpecificWindowAttributes {
     pub name: Option<ApplicationName>,
     pub activation_token: Option<ActivationToken>,
+    /// Wayland-only: an xdg-foreign handle of a toplevel exported by another
+    /// client, to be made the parent of this window via `zxdg_importer_v2`.
+    /// Used by portal file-chooser dialogs to attach to the requesting app's
+    /// window. Ignored on X11.
+    pub wayland_parent: Option<String>,
     #[cfg(x11_platform)]
     pub x11: X11WindowAttributes,
 }
@@ -96,6 +101,7 @@ impl Default for PlatformSpecificWindowAttributes {
         Self {
             name: None,
             activation_token: None,
+            wayland_parent: None,
             #[cfg(x11_platform)]
             x11: X11WindowAttributes {
                 visual_id: None,

@@ -42,6 +42,7 @@ use crate::platform_impl::wayland::types::wayland_dnd::{DndSessionState, Wayland
 use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScalingManager;
 use crate::platform_impl::wayland::types::wp_viewporter::ViewporterState;
 use crate::platform_impl::wayland::types::xdg_activation::XdgActivationState;
+use crate::platform_impl::wayland::types::xdg_foreign::XdgForeign;
 use crate::platform_impl::wayland::types::xdg_popup::{PopupEvent, PopupId, PopupState};
 use crate::platform_impl::wayland::types::xdg_toplevel_icon::ToplevelIconManager;
 use crate::platform_impl::wayland::window::{WindowRequests, WindowState};
@@ -141,6 +142,11 @@ pub struct WinitState {
     /// COSMIC surface embed manager.
     pub surface_embed_manager: Option<CosmicSurfaceEmbedManager>,
 
+    /// xdg-foreign importer, for parenting a window to a foreign toplevel
+    /// exported by another client (e.g. a portal file-chooser dialog parented
+    /// to the requesting application's window).
+    pub xdg_foreign: Option<XdgForeign>,
+
     /// COSMIC tooltip manager.
     pub tooltip_manager: Option<CosmicTooltipManager>,
 
@@ -236,6 +242,7 @@ impl WinitState {
             backdrop_color_manager: CosmicBackdropColorManager::new(globals, queue_handle).ok(),
             exclusive_mode_manager: CosmicExclusiveModeManager::new(globals, queue_handle).ok(),
             surface_embed_manager: CosmicSurfaceEmbedManager::new(globals, queue_handle).ok(),
+            xdg_foreign: XdgForeign::new(globals, queue_handle).ok(),
             tooltip_manager: CosmicTooltipManager::new(globals, queue_handle).ok(),
             voice_mode_manager: CosmicVoiceModeManager::new(globals, queue_handle).ok(),
 

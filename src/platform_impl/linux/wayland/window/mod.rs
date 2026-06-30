@@ -182,6 +182,23 @@ impl Window {
             xdg_activation.activate(token.token, &surface);
         }
 
+        // Parent this window to a foreign toplevel via xdg-foreign, if requested.
+        // Used by portal file-chooser dialogs to attach to the requesting app's
+        // window, so the compositor places the dialog over it on the right
+        // output instead of dropping it on a default output. Must run before the
+        // initial commit so the compositor knows the parent at map time.
+        if let Some(handle) = attributes.platform_specific.wayland_parent.as_deref() {
+            match state.xdg_foreign.as_ref() {
+                Some(xdg_foreign) => {
+                    let imported = xdg_foreign.import_parent(handle, &surface, &queue_handle);
+                    window_state.set_imported_parent(imported);
+                },
+                None => warn!(
+                    "xdg-foreign unsupported by the compositor; cannot parent window to {handle}"
+                ),
+            }
+        }
+
         // XXX Do initial commit.
         window.commit();
 
