@@ -60,6 +60,16 @@ pub struct SharedDndOfferState {
     /// Pending data received from a request_data call.
     /// The event loop will drain this and emit DataReceived events.
     pub pending_data: Vec<(String, Vec<u8>)>,
+    /// Payload of an OUTGOING drag WE started (mime → bytes), while it's active.
+    /// For a self-drag (drop onto one of our own windows), `request_data` reads
+    /// this DIRECTLY instead of the pipe: the source's `Send` runs on this same
+    /// event-loop thread, so a blocking pipe read would deadlock the process.
+    pub self_source: Option<Vec<(String, Vec<u8>)>>,
+    /// The window that STARTED the current outgoing drag. Source-side events
+    /// (DropPerformed/Finished/Cancelled) must be delivered here so the initiating
+    /// window can clear its drag state — `focused_window` tracks the destination
+    /// under the cursor (and is cleared on Leave), so it can't identify the source.
+    pub source_window: Option<WindowId>,
 }
 
 /// Shared mutable state for the current DnD session.
@@ -79,6 +89,11 @@ pub struct DndSessionState {
     /// Set when a Drop event is received, prevents Leave from clearing the offer
     /// prematurely (the offer is needed for `finish()`).
     pub drop_received: bool,
+    /// The window the Drop landed on, captured at Drop time. `Leave` clears
+    /// `focused_window` before the requested data arrives, so the async
+    /// `DataReceived` must be delivered here (not to an arbitrary fallback window)
+    /// — critical when multiple windows are open.
+    pub drop_window: Option<WindowId>,
 }
 
 impl Default for DndSessionState {
@@ -91,6 +106,7 @@ impl Default for DndSessionState {
             focused_window: None,
             icon_surface: None,
             drop_received: false,
+            drop_window: None,
         }
     }
 }
@@ -275,8 +291,13 @@ impl Dispatch<WlDataDevice, DndDeviceData, WinitState> for WaylandDndManager {
 
         match event {
             DdEvent::DataOffer { id } => {
-                // A new data offer appeared. Store it; mime types arrive via WlDataOffer events.
+                // A new data offer appeared — start of a new incoming drag. Store it
+                // and reset per-drag destination state (a purely external drag never
+                // fires our source-side cleanup, so these would otherwise leak into
+                // the next drag and misroute its DataReceived).
                 tracing::debug!("DnD: new data offer");
+                session.drop_received = false;
+                session.drop_window = None;
                 session.shared_offer.lock().unwrap().current_offer = Some(id);
                 session.offer_mime_types.clear();
             },
@@ -315,6 +336,9 @@ impl Dispatch<WlDataDevice, DndDeviceData, WinitState> for WaylandDndManager {
             },
             DdEvent::Drop => {
                 session.drop_received = true;
+                // Capture the drop window now — the Leave that follows clears
+                // `focused_window` before the requested data arrives.
+                session.drop_window = session.focused_window;
                 if let Some(wid) = session.focused_window {
                     tracing::debug!(?wid, "DnD: drop");
                     state
@@ -390,11 +414,17 @@ impl Dispatch<WlDataSource, DndSourceData, WinitState> for WaylandDndManager {
     ) {
         use wayland_client::protocol::wl_data_source::Event as SrcEvent;
 
-        // Source events go to whatever window initiated the drag. We use the
-        // first window if we don't have a better target.
+        // Source events belong to the window that STARTED the drag. Route to the
+        // recorded source window (focused_window tracks the destination and is
+        // cleared on Leave, so it can't identify the initiator); fall back to
+        // focused/first only if unknown.
         let target_window = state
             .dnd_session
-            .focused_window
+            .shared_offer
+            .lock()
+            .unwrap()
+            .source_window
+            .or(state.dnd_session.focused_window)
             .or_else(|| state.windows.borrow().keys().next().copied());
 
         match event {
@@ -436,8 +466,14 @@ impl Dispatch<WlDataSource, DndSourceData, WinitState> for WaylandDndManager {
                 // Clean up session state.
                 state.dnd_session.icon_surface = None;
                 state.dnd_session.drop_received = false;
-                // Clear offer that may have been preserved for finish().
-                state.dnd_session.shared_offer.lock().unwrap().current_offer = None;
+                state.dnd_session.drop_window = None;
+                // Clear the offer preserved for finish() and our own source payload.
+                {
+                    let mut shared = state.dnd_session.shared_offer.lock().unwrap();
+                    shared.current_offer = None;
+                    shared.self_source = None;
+                    shared.source_window = None;
+                }
                 state.dnd_session.offer_mime_types.clear();
             },
             SrcEvent::DndDropPerformed => {
@@ -448,6 +484,11 @@ impl Dispatch<WlDataSource, DndSourceData, WinitState> for WaylandDndManager {
                         wid,
                     );
                 }
+                // Do NOT clear `self_source` here: for a self-drag, DndDropPerformed
+                // fires BEFORE the destination's `dnd_request_data` reads the payload
+                // — clearing now would force the blocking pipe read and DEADLOCK the
+                // process. It's cleared on DndFinished (after the read) and
+                // overwritten at the next start_drag.
             },
             SrcEvent::DndFinished => {
                 tracing::info!("DnD source: finished");
@@ -461,6 +502,12 @@ impl Dispatch<WlDataSource, DndSourceData, WinitState> for WaylandDndManager {
                 // Clean up session state.
                 state.dnd_session.icon_surface = None;
                 state.dnd_session.drop_received = false;
+                state.dnd_session.drop_window = None;
+                {
+                    let mut shared = state.dnd_session.shared_offer.lock().unwrap();
+                    shared.self_source = None;
+                    shared.source_window = None;
+                }
             },
             SrcEvent::Action { dnd_action } => {
                 let action_bits = dnd_action.into();

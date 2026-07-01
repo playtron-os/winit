@@ -543,10 +543,14 @@ impl<T: 'static> EventLoop<T> {
             drop(guard);
 
             if !pending.is_empty() {
-                // Send to the focused window, or first window as fallback
+                // Deliver to the window the Drop landed on (captured at Drop time),
+                // since `focused_window` was cleared by the Leave that precedes the
+                // data arriving. Fall back to focused/first only if unset.
                 let target_window = state
                     .dnd_session
-                    .focused_window
+                    .drop_window
+                    .take()
+                    .or(state.dnd_session.focused_window)
                     .or_else(|| state.windows.borrow().keys().next().copied());
 
                 if let Some(wid) = target_window {

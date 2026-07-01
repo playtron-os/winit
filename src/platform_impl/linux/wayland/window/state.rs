@@ -1848,6 +1848,21 @@ impl WindowState {
             "DnD: started drag from window (wl_data_device.start_drag)"
         );
 
+        // Remember our own payload so a self-drag (a drop onto one of our own
+        // windows) can read it DIRECTLY in `dnd_request_data` instead of the pipe:
+        // the source `Send` handler runs on this same event-loop thread, so a
+        // blocking pipe read would deadlock the whole process. Also record the
+        // source window so source-side events reach the initiator. Overwriting
+        // here also ensures a new drag never inherits a previous drag's state.
+        {
+            let wid = crate::platform_impl::wayland::make_wid(self.window.wl_surface());
+            let pairs: Vec<(String, Vec<u8>)> =
+                mime_types.iter().cloned().zip(data.iter().cloned()).collect();
+            let mut shared = self.dnd_shared_offer.lock().unwrap();
+            shared.self_source = Some(pairs);
+            shared.source_window = Some(wid);
+        }
+
         // Return the source info so the caller can store it in WinitState's dnd_session.
         (true, mime_types, data)
     }
@@ -1926,6 +1941,24 @@ impl WindowState {
         use std::os::fd::AsFd;
 
         let mut guard = self.dnd_shared_offer.lock().unwrap();
+
+        // Self-drag fast path: if WE are the source of this drag (a drop onto one
+        // of our own windows), read the payload directly rather than via the pipe.
+        // The source's `Send` handler runs on THIS event-loop thread, so a blocking
+        // pipe read would deadlock the whole process (freezing every window).
+        if let Some(pairs) = guard.self_source.as_ref() {
+            if let Some((_, data)) = pairs.iter().find(|(m, _)| m == mime_type) {
+                let data = data.clone();
+                tracing::debug!(
+                    mime_type,
+                    bytes = data.len(),
+                    "DnD: self-drag, data read directly"
+                );
+                guard.pending_data.push((mime_type.to_string(), data));
+                return;
+            }
+        }
+
         let Some(offer) = guard.current_offer.as_ref() else {
             tracing::warn!("DnD: request_data called with no current offer");
             return;
