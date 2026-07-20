@@ -227,6 +227,15 @@ pub struct WindowState {
     /// The value is the serial of the event triggered moved.
     has_pending_move: Option<u32>,
 
+    /// Seat + serial of the most recent `wl_touch.down` on this surface.
+    ///
+    /// `xdg_toplevel.move`/`resize` require the serial of an input event with
+    /// an active implicit grab. A touchscreen produces no pointer button serial,
+    /// so an interactive move/resize started from a touch gesture must use the
+    /// touch-down serial instead — otherwise the request is ignored and the
+    /// window never moves.
+    last_touch_down: Option<(WlSeat, u32)>,
+
     /// The underlying SCTK window.
     pub window: Window,
 
@@ -292,6 +301,7 @@ impl WindowState {
             frame_callback_state: FrameCallbackState::None,
             seat_focus: Default::default(),
             has_pending_move: None,
+            last_touch_down: None,
             ime_allowed: false,
             ime_purpose: ImePurpose::Normal,
             last_configure: None,
@@ -502,15 +512,32 @@ impl WindowState {
     }
 
     /// Start interacting drag resize.
+    /// Record the seat and serial of the latest `wl_touch.down` on this surface
+    /// so a touch-initiated interactive move/resize can pass a valid grab serial
+    /// to the compositor (see [`Self::last_touch_down`]).
+    pub fn set_last_touch_down(&mut self, seat: WlSeat, serial: u32) {
+        self.last_touch_down = Some((seat, serial));
+    }
+
     pub fn drag_resize_window(&self, direction: ResizeDirection) -> Result<(), ExternalError> {
         let xdg_toplevel = self.window.xdg_toplevel();
 
-        // TODO(kchibisov) handle touch serials.
+        // Prefer a pointer button serial; on a touchscreen there is none, so
+        // fall back to the latest touch-down serial.
+        let mut resized = false;
         self.apply_on_pointer(|_, data| {
             let serial = data.latest_button_serial();
-            let seat = data.seat();
-            xdg_toplevel.resize(seat, serial, direction.into());
+            if serial != 0 {
+                let seat = data.seat();
+                xdg_toplevel.resize(seat, serial, direction.into());
+                resized = true;
+            }
         });
+        if !resized {
+            if let Some((seat, serial)) = &self.last_touch_down {
+                xdg_toplevel.resize(seat, *serial, direction.into());
+            }
+        }
 
         Ok(())
     }
@@ -518,12 +545,22 @@ impl WindowState {
     /// Start the window drag.
     pub fn drag_window(&self) -> Result<(), ExternalError> {
         let xdg_toplevel = self.window.xdg_toplevel();
-        // TODO(kchibisov) handle touch serials.
+        // Prefer a pointer button serial; on a touchscreen there is none, so
+        // fall back to the latest touch-down serial.
+        let mut moved = false;
         self.apply_on_pointer(|_, data| {
             let serial = data.latest_button_serial();
-            let seat = data.seat();
-            xdg_toplevel._move(seat, serial);
+            if serial != 0 {
+                let seat = data.seat();
+                xdg_toplevel._move(seat, serial);
+                moved = true;
+            }
         });
+        if !moved {
+            if let Some((seat, serial)) = &self.last_touch_down {
+                xdg_toplevel._move(seat, *serial);
+            }
+        }
 
         Ok(())
     }
