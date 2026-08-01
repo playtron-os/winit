@@ -788,6 +788,25 @@ impl WindowState {
         }
     }
 
+    /// Reissue the background-effect blur region to the compositor.
+    ///
+    /// The protocol has no whole-surface mode, so the region has to be resent
+    /// whenever the surface changes size or it would stay sized to the old
+    /// window. The KDE blur protocol tracks the surface on its own and needs
+    /// none of this.
+    pub fn reload_blur_region(&self) {
+        let Some(effect) = self.background_effect.as_ref() else {
+            return;
+        };
+
+        if let Ok(region) = Region::new(&*self.compositor) {
+            region.add(0, 0, self.size.width as i32, self.size.height as i32);
+            effect.set_blur_region(Some(region.wl_region()));
+        } else {
+            warn!("Failed to set blur region.");
+        }
+    }
+
     /// Try to resize the window when the user can do so.
     pub fn request_inner_size(&mut self, inner_size: Size) -> PhysicalSize<u32> {
         let logical_size = inner_size.to_logical(self.scale_factor());
@@ -848,6 +867,7 @@ impl WindowState {
 
         // Reload the hint.
         self.reload_transparency_hint();
+        self.reload_blur_region();
 
         // Set the window geometry.
         tracing::debug!(
@@ -1256,11 +1276,8 @@ impl WindowState {
             if let Some(manager) = self.background_effect_manager.as_ref() {
                 let effect =
                     manager.get_background_effect(self.window.wl_surface(), &self.queue_handle);
-                // The whole surface, so the compositor keeps the blurred area
-                // matched as the window resizes rather than us resending a
-                // region and flashing unblurred whenever we lose that race.
-                effect.blur_whole_surface();
                 self.background_effect = Some(effect);
+                self.reload_blur_region();
             }
         } else if !blurred && self.background_effect.is_some() {
             // Dropping it destroys the object; unset first so the effect is

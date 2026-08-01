@@ -3,18 +3,13 @@
 //! Asks the compositor to blur whatever is behind a surface, so a translucent
 //! surface reads as frosted glass rather than a plain alpha blend.
 //!
-//! Version 1 is the upstream staging protocol: the client marks a region and
-//! the compositor decides everything else. Version 2 additionally lets the
-//! client ask for a blur strength, round the blurred area to match the shape it
-//! draws, and blur the whole surface without resending a region on every
-//! resize. Version 3 adds the frosted-glass appearance (saturation, tint,
-//! border), which winit leaves to the compositor since it exposes blur as a
-//! single `blur: bool`. The manager binds `1..=3`, so a version 1 compositor
-//! still works and the later requests are simply unavailable -- check
-//! [`BackgroundEffectManager::version`] before calling them.
+//! This is upstream's staging protocol: the client marks a region and the
+//! compositor decides everything else -- there is no way to ask for a blur
+//! strength, round the blurred area, or set the frosted-glass appearance.
 //!
-//! This does not replace the KDE blur protocol. Compositors that implement only
-//! one of the two are common, so a client should set both.
+//! It therefore does not replace the KDE blur protocol, which carries all of
+//! those. Compositors commonly implement only one of the two, so a client
+//! should set both and let whichever is understood take effect.
 
 use sctk::globals::GlobalData;
 use sctk::reexports::client::globals::{BindError, GlobalList};
@@ -41,14 +36,6 @@ pub mod protocol {
 pub use protocol::ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1;
 pub use protocol::ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1;
 
-/// The version at which the radius, corner and whole-surface requests appear.
-const VERSION_WITH_RADIUS: u32 = 2;
-/// Highest version this binds. Version 3 adds the frosted-glass appearance
-/// requests (saturation, tint, border); winit exposes blur as a single `blur:
-/// bool` and leaves those to the compositor's defaults, but it still negotiates
-/// the version so it is not pinned below what the compositor offers.
-const MAX_VERSION: u32 = 3;
-
 /// Background effect manager (binds the compositor global).
 #[derive(Debug, Clone)]
 pub struct BackgroundEffectManager {
@@ -62,7 +49,6 @@ pub struct BackgroundEffectManager {
 #[derive(Debug)]
 pub struct BackgroundEffect {
     effect: ExtBackgroundEffectSurfaceV1,
-    version: u32,
 }
 
 impl BackgroundEffectManager {
@@ -71,21 +57,8 @@ impl BackgroundEffectManager {
         globals: &GlobalList,
         queue_handle: &QueueHandle<WinitState>,
     ) -> Result<Self, BindError> {
-        // Accept a version 1 compositor: the base protocol still gets us a
-        // blurred region, just without strength or corner control.
-        let manager = globals.bind(queue_handle, 1..=MAX_VERSION, GlobalData)?;
+        let manager = globals.bind(queue_handle, 1..=1, GlobalData)?;
         Ok(Self { manager })
-    }
-
-    /// The bound protocol version.
-    pub fn version(&self) -> u32 {
-        self.manager.version()
-    }
-
-    /// Whether the compositor supports the strength, corner and whole-surface
-    /// requests.
-    pub fn supports_radius(&self) -> bool {
-        self.version() >= VERSION_WITH_RADIUS
     }
 
     /// Create the background effect for a surface.
@@ -98,15 +71,16 @@ impl BackgroundEffectManager {
         queue_handle: &QueueHandle<WinitState>,
     ) -> BackgroundEffect {
         let effect = self.manager.get_background_effect(surface, queue_handle, ());
-        BackgroundEffect { effect, version: self.version() }
+        BackgroundEffect { effect }
     }
 }
 
 impl BackgroundEffect {
     /// Blur the background within `region`, in surface-local coordinates.
     ///
-    /// Supersedes a previous [`Self::blur_whole_surface`]. Takes effect on the
-    /// next surface commit.
+    /// The protocol has no whole-surface mode, so a caller wanting the whole
+    /// background blurred passes a surface-sized region and resends it on
+    /// resize. Takes effect on the next surface commit.
     pub fn set_blur_region(&self, region: Option<&WlRegion>) {
         self.effect.set_blur_region(region);
     }
@@ -114,45 +88,6 @@ impl BackgroundEffect {
     /// Remove the effect.
     pub fn unset(&self) {
         self.effect.set_blur_region(None);
-    }
-
-    /// Blur the whole surface, letting the compositor keep the area matched to
-    /// it as it resizes.
-    ///
-    /// Silently does nothing before version 2; use [`Self::set_blur_region`]
-    /// with a surface-sized region there instead.
-    pub fn blur_whole_surface(&self) {
-        if self.version >= VERSION_WITH_RADIUS {
-            self.effect.blur_whole_surface();
-        }
-    }
-
-    /// Ask for a blur strength, in surface-local coordinates. `0` means the
-    /// compositor's default, not "no blur".
-    ///
-    /// This is a hint; the compositor may clamp or ignore it. Silently does
-    /// nothing before version 2.
-    pub fn set_blur_radius(&self, radius: u32) {
-        if self.version >= VERSION_WITH_RADIUS {
-            self.effect.set_blur_radius(radius);
-        }
-    }
-
-    /// Round the corners of the blurred area, one entry per region rect,
-    /// clockwise from top-left, so the backdrop follows the shape the surface
-    /// draws.
-    ///
-    /// Entries are index-matched to the region's rectangles; a single entry
-    /// rounds every rectangle the same way. Silently does nothing before
-    /// version 2.
-    pub fn set_region_radii(&self, radii: &[[u32; 4]]) {
-        if self.version >= VERSION_WITH_RADIUS && !radii.is_empty() {
-            let encoded = radii
-                .iter()
-                .flat_map(|corners| corners.iter().flat_map(|r| r.to_ne_bytes()))
-                .collect();
-            self.effect.set_region_radii(encoded);
-        }
     }
 }
 
