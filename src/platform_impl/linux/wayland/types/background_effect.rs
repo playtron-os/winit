@@ -131,13 +131,20 @@ impl BackgroundEffect {
         }
     }
 
-    /// Round the corners of the blurred area, clockwise from top-left, so the
-    /// backdrop follows the shape the surface draws.
+    /// Round the corners of the blurred area, one entry per region rect,
+    /// clockwise from top-left, so the backdrop follows the shape the surface
+    /// draws.
     ///
-    /// Silently does nothing before version 2.
-    pub fn set_corner_radius(&self, radii: [u32; 4]) {
-        if self.version >= VERSION_WITH_RADIUS {
-            self.effect.set_corner_radius(radii[0], radii[1], radii[2], radii[3]);
+    /// Entries are index-matched to the region's rectangles; a single entry
+    /// rounds every rectangle the same way. Silently does nothing before
+    /// version 2.
+    pub fn set_region_radii(&self, radii: &[[u32; 4]]) {
+        if self.version >= VERSION_WITH_RADIUS && !radii.is_empty() {
+            let encoded = radii
+                .iter()
+                .flat_map(|corners| corners.iter().flat_map(|r| r.to_ne_bytes()))
+                .collect();
+            self.effect.set_region_radii(encoded);
         }
     }
 }
