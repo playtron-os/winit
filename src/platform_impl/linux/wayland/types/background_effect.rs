@@ -7,9 +7,11 @@
 //! the compositor decides everything else. Version 2 additionally lets the
 //! client ask for a blur strength, round the blurred area to match the shape it
 //! draws, and blur the whole surface without resending a region on every
-//! resize. The manager binds `1..=2`, so a version 1 compositor still works and
-//! the version 2 requests are simply unavailable -- check [`Self::version`]
-//! before calling them.
+//! resize. Version 3 adds the frosted-glass appearance (saturation, tint,
+//! border), which winit leaves to the compositor since it exposes blur as a
+//! single `blur: bool`. The manager binds `1..=3`, so a version 1 compositor
+//! still works and the later requests are simply unavailable -- check
+//! [`BackgroundEffectManager::version`] before calling them.
 //!
 //! This does not replace the KDE blur protocol. Compositors that implement only
 //! one of the two are common, so a client should set both.
@@ -41,6 +43,11 @@ pub use protocol::ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1
 
 /// The version at which the radius, corner and whole-surface requests appear.
 const VERSION_WITH_RADIUS: u32 = 2;
+/// Highest version this binds. Version 3 adds the frosted-glass appearance
+/// requests (saturation, tint, border); winit exposes blur as a single `blur:
+/// bool` and leaves those to the compositor's defaults, but it still negotiates
+/// the version so it is not pinned below what the compositor offers.
+const MAX_VERSION: u32 = 3;
 
 /// Background effect manager (binds the compositor global).
 #[derive(Debug, Clone)]
@@ -66,7 +73,7 @@ impl BackgroundEffectManager {
     ) -> Result<Self, BindError> {
         // Accept a version 1 compositor: the base protocol still gets us a
         // blurred region, just without strength or corner control.
-        let manager = globals.bind(queue_handle, 1..=VERSION_WITH_RADIUS, GlobalData)?;
+        let manager = globals.bind(queue_handle, 1..=MAX_VERSION, GlobalData)?;
         Ok(Self { manager })
     }
 
