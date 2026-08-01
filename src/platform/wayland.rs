@@ -315,6 +315,8 @@ pub trait WindowExtWayland {
     /// * `width` - Width of the embed region
     /// * `height` - Height of the embed region
     /// * `interactive` - Whether input should be routed to the embedded surface
+    // Arity follows the protocol request; a struct would obscure it.
+    #[allow(clippy::too_many_arguments)]
     fn embed_toplevel_by_pid(
         &self,
         pid: u32,
@@ -351,6 +353,8 @@ pub trait WindowExtWayland {
     /// * `margin_left` - Margin from left edge
     /// * `width` - Width of embed region (0 to stretch between left/right anchors)
     /// * `height` - Height of embed region (0 to stretch between top/bottom anchors)
+    // Arity follows the protocol request; a struct would obscure it.
+    #[allow(clippy::too_many_arguments)]
     fn set_embed_anchor(
         &self,
         embed_id: u64,

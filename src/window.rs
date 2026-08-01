@@ -1827,8 +1827,10 @@ pub enum WindowLevel {
 /// - **iOS / Android / Web / Windows / X11 / macOS / Orbital:** Unsupported.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[non_exhaustive]
+#[derive(Default)]
 pub enum ImePurpose {
     /// No special hints for the IME (default).
+    #[default]
     Normal,
     /// The IME is used for password input.
     Password,
@@ -1838,11 +1840,6 @@ pub enum ImePurpose {
     Terminal,
 }
 
-impl Default for ImePurpose {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
 
 /// An opaque token used to activate the [`Window`].
 ///

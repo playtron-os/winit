@@ -144,6 +144,10 @@ impl fmt::Display for OsError {
     }
 }
 
+// Only one variant is ever constructed in a process -- the backend is chosen at
+// startup -- so the size difference costs nothing, while boxing it would add an
+// allocation and a pointer hop to every window operation.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum Window {
     #[cfg(x11_platform)]
     X(x11::Window),

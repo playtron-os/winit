@@ -37,6 +37,7 @@ use crate::platform_impl::wayland::types::cosmic_exclusive_mode::CosmicExclusive
 use crate::platform_impl::wayland::types::cosmic_surface_embed::CosmicSurfaceEmbedManager;
 use crate::platform_impl::wayland::types::cosmic_tooltip::CosmicTooltipManager;
 use crate::platform_impl::wayland::types::cosmic_voice_mode::CosmicVoiceModeManager;
+use crate::platform_impl::wayland::types::background_effect::BackgroundEffectManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::wayland_dnd::{DndSessionState, WaylandDndManager};
 use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScalingManager;
@@ -126,6 +127,10 @@ pub struct WinitState {
 
     /// KWin blur manager.
     pub kwin_blur_manager: Option<KWinBlurManager>,
+
+    /// The standard background-effect protocol. Compositors commonly implement
+    /// only one of this and KDE blur, so both are bound and both are set.
+    pub background_effect_manager: Option<BackgroundEffectManager>,
 
     /// COSMIC animated resize manager.
     pub animated_resize_manager: Option<CosmicAnimatedResizeManager>,
@@ -237,6 +242,7 @@ impl WinitState {
             fractional_scaling_manager,
             toplevel_icon_manager: ToplevelIconManager::new(globals, queue_handle).ok(),
             kwin_blur_manager: KWinBlurManager::new(globals, queue_handle).ok(),
+            background_effect_manager: BackgroundEffectManager::new(globals, queue_handle).ok(),
             animated_resize_manager: CosmicAnimatedResizeManager::new(globals, queue_handle).ok(),
             corner_radius_manager: CosmicCornerRadiusManager::new(globals, queue_handle).ok(),
             backdrop_color_manager: CosmicBackdropColorManager::new(globals, queue_handle).ok(),

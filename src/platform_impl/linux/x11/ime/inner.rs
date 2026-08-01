@@ -51,8 +51,8 @@ impl ImeInner {
     }
 
     pub unsafe fn close_im_if_necessary(&self) -> Result<bool, XError> {
-        if !self.is_destroyed && self.im.is_some() {
-            unsafe { close_im(&self.xconn, self.im.as_ref().unwrap().im) }.map(|_| true)
+        if let Some(im) = self.im.as_ref().filter(|_| !self.is_destroyed) {
+            unsafe { close_im(&self.xconn, im.im) }.map(|_| true)
         } else {
             Ok(false)
         }

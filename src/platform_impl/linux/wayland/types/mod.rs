@@ -1,5 +1,6 @@
 //! Wayland protocol implementation boilerplate.
 
+pub mod background_effect;
 pub mod cosmic_animated_resize;
 pub mod cosmic_backdrop_color;
 pub mod cosmic_corner_radius;

@@ -910,7 +910,7 @@ impl ActiveEventLoop {
         // Create the popup - get positioner reference via Deref
         let popup = Popup::from_surface(
             Some(&parent_xdg_surface),
-            &*positioner,
+            &positioner,
             &self.queue_handle,
             surface,
             &state.xdg_shell,
@@ -951,7 +951,7 @@ impl ActiveEventLoop {
         // When no explicit geometry is provided, default to the full popup size
         // so the compositor always has accurate geometry for anchor calculations.
         if let Some((gx, gy, gw, gh)) = settings.window_geometry {
-            popup.xdg_surface().set_window_geometry(gx, gy, gw as i32, gh as i32);
+            popup.xdg_surface().set_window_geometry(gx, gy, gw, gh);
         } else {
             popup.xdg_surface().set_window_geometry(
                 0,
@@ -992,7 +992,7 @@ impl ActiveEventLoop {
 
         // Set up compositor-driven tooltip positioning if requested
         if let Some((offset_x, offset_y)) = settings.tooltip_offset {
-            use sctk::reexports::client::Proxy;
+            
             if let Some(ref tooltip_manager) = state.tooltip_manager {
                 let popup_wl_surface = popup_state.popup.wl_surface();
                 let tooltip_handle = tooltip_manager.get_tooltip(

@@ -542,6 +542,8 @@ impl Window {
     /// Returns an embed ID that can be used to update geometry or remove the embed,
     /// or `None` if the surface embed protocol is not available.
     #[inline]
+    // Arity follows the protocol request; a struct would obscure it.
+    #[allow(clippy::too_many_arguments)]
     pub fn embed_toplevel_by_pid(
         &self,
         pid: u32,
@@ -578,6 +580,8 @@ impl Window {
 
     /// Set anchor-based positioning for an embedded surface.
     #[inline]
+    // Arity follows the protocol request; a struct would obscure it.
+    #[allow(clippy::too_many_arguments)]
     pub fn set_embed_anchor(
         &self,
         embed_id: u64,

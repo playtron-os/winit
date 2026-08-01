@@ -56,6 +56,9 @@ use crate::platform_impl::wayland::types::cosmic_voice_mode::{
     CosmicVoiceModeManager, VoiceModeReceiver,
 };
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
+use crate::platform_impl::wayland::types::background_effect::{
+    BackgroundEffect, BackgroundEffectManager,
+};
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::wayland_dnd::{SharedDndOfferState, WaylandDndManager};
 use crate::platform_impl::wayland::types::xdg_foreign::ImportedToplevel;
@@ -173,6 +176,11 @@ pub struct WindowState {
     fractional_scale: Option<WpFractionalScaleV1>,
     blur: Option<OrgKdeKwinBlur>,
     blur_manager: Option<KWinBlurManager>,
+    /// The standard background-effect equivalent of `blur`. Compositors
+    /// commonly implement only one of the two protocols, so both are set and
+    /// whichever the compositor understands takes effect.
+    background_effect: Option<BackgroundEffect>,
+    background_effect_manager: Option<BackgroundEffectManager>,
 
     /// COSMIC animated resize manager.
     animated_resize_manager: Option<CosmicAnimatedResizeManager>,
@@ -271,6 +279,8 @@ impl WindowState {
         Self {
             blur: None,
             blur_manager: winit_state.kwin_blur_manager.clone(),
+            background_effect: None,
+            background_effect_manager: winit_state.background_effect_manager.clone(),
             animated_resize_manager: winit_state.animated_resize_manager.clone(),
             animated_resize_controller: None,
             corner_radius_manager: winit_state.corner_radius_manager.clone(),
@@ -1239,13 +1249,35 @@ impl WindowState {
     /// Make window background blurred
     #[inline]
     pub fn set_blur(&mut self, blurred: bool) {
+        // Both protocols are driven from this one setting: a compositor
+        // typically implements one or the other, and the one it does not
+        // understand simply never binds.
+        if blurred && self.background_effect.is_none() {
+            if let Some(manager) = self.background_effect_manager.as_ref() {
+                let effect =
+                    manager.get_background_effect(self.window.wl_surface(), &self.queue_handle);
+                // The whole surface, so the compositor keeps the blurred area
+                // matched as the window resizes rather than us resending a
+                // region and flashing unblurred whenever we lose that race.
+                effect.blur_whole_surface();
+                self.background_effect = Some(effect);
+            }
+        } else if !blurred && self.background_effect.is_some() {
+            // Dropping it destroys the object; unset first so the effect is
+            // gone even if the compositor keeps the surface around.
+            self.background_effect.as_ref().unwrap().unset();
+            self.background_effect = None;
+        }
+
         if blurred && self.blur.is_none() {
             if let Some(blur_manager) = self.blur_manager.as_ref() {
                 let blur = blur_manager.blur(self.window.wl_surface(), &self.queue_handle);
                 blur.commit();
                 self.blur = Some(blur);
             } else {
-                info!("Blur manager unavailable, unable to change blur")
+                if self.background_effect_manager.is_none() {
+                    info!("No blur protocol available, unable to change blur")
+                }
             }
         } else if !blurred && self.blur.is_some() {
             self.blur_manager.as_ref().unwrap().unset(self.window.wl_surface());
@@ -1566,6 +1598,8 @@ impl WindowState {
     /// * `width` - Width of the embed region
     /// * `height` - Height of the embed region
     /// * `interactive` - Whether input should be routed to the embedded surface
+    // Arity follows the protocol request; a struct would obscure it.
+    #[allow(clippy::too_many_arguments)]
     pub fn embed_toplevel_by_pid(
         &mut self,
         pid: u32,
@@ -1654,6 +1688,8 @@ impl WindowState {
     /// * `margin_left` - Margin from left edge
     /// * `width` - Width of embed region (0 to stretch between left/right anchors)
     /// * `height` - Height of embed region (0 to stretch between top/bottom anchors)
+    // Arity follows the protocol request; a struct would obscure it.
+    #[allow(clippy::too_many_arguments)]
     pub fn set_embed_anchor(
         &mut self,
         embed_id: u64,

@@ -366,6 +366,14 @@ impl ApplicationHandler<UserEvent> for Application {
                 info!("Theme changed to {theme:?}");
                 window.set_draw_theme(theme);
             },
+            // Fork-only events; this example has nothing to do with them, but
+            // the match is exhaustive so they still have to be named.
+            WindowEvent::VoiceMode(state) => {
+                info!("Window={window_id:?} voice mode {state:?}");
+            },
+            WindowEvent::Dnd(event) => {
+                info!("Window={window_id:?} drag-and-drop {event:?}");
+            },
             WindowEvent::RedrawRequested => {
                 if let Err(err) = window.draw() {
                     error!("Error drawing window: {err}");

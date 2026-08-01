@@ -170,7 +170,7 @@ impl VoiceModeReceiver {
     /// # Arguments
     /// * `serial` - The serial from the will_stop event
     /// * `freeze` - If true, freeze the orb in place (transcription processing).
-    ///              If false, proceed with hiding the orb.
+    ///   If false, proceed with hiding the orb.
     pub fn ack_stop(&self, serial: u32, freeze: bool) {
         self.receiver.ack_stop(serial, if freeze { 1 } else { 0 });
     }

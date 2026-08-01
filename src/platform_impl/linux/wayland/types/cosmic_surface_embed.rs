@@ -209,6 +209,8 @@ impl EmbeddedSurface {
     /// * `margin_left` - Margin from left edge (when anchored to left)
     /// * `width` - Width of embed region (0 to stretch between left/right anchors)
     /// * `height` - Height of embed region (0 to stretch between top/bottom anchors)
+    // Arity follows the protocol request; a struct would obscure it.
+    #[allow(clippy::too_many_arguments)]
     pub fn set_anchor(
         &self,
         anchor: u32,
