@@ -976,6 +976,71 @@ impl ActiveEventLoop {
             }
         }
 
+        // Corner radius first: the compositor rounds the blur and the shadow
+        // to whatever the surface has hinted, so hinting after them would
+        // leave both square for a frame.
+        let corner_radius = settings.corner_radius.and_then(|radius| {
+            let manager = state.corner_radius_manager.as_ref()?;
+            let controller = manager.get_corner_radius(popup.wl_surface(), &self.queue_handle);
+            controller.set_radius(radius, radius, radius, radius);
+            Some(controller)
+        });
+
+        // A drop shadow drawn by the compositor rather than by padding the
+        // surface out and drawing one — which does not combine with blur.
+        let shadow = settings.shadow.then(|| {
+            let controller = state
+                .layer_shadow_manager
+                .as_ref()
+                .map(|manager| manager.get_shadow(popup.wl_surface(), &self.queue_handle));
+            if let Some(controller) = controller.as_ref() {
+                controller.enable();
+            } else {
+                tracing::info!("No shadow protocol available; the popup will have no shadow");
+            }
+            controller
+        }).flatten();
+
+        // Blur behind the popup. Both protocols are driven from the one
+        // setting: a compositor implements one or the other, and the one it
+        // does not understand never binds. The region is the whole surface,
+        // which is right precisely because the shadow is the compositor's —
+        // there is no transparent padding around the card to blur by mistake.
+        let (background_effect, kwin_blur) = if settings.blur {
+            let blur_region = || {
+                Region::new(&*state.compositor_state).ok().map(|region| {
+                    region.add(0, 0, settings.size.0 as i32, settings.size.1 as i32);
+                    region
+                })
+            };
+
+            let effect = state.background_effect_manager.as_ref().map(|manager| {
+                let effect = manager.get_background_effect(popup.wl_surface(), &self.queue_handle);
+                if let Some(region) = blur_region() {
+                    effect.set_blur_region(Some(region.wl_region()));
+                } else {
+                    tracing::warn!("Could not build a blur region for the popup");
+                }
+                effect
+            });
+
+            let blur = state.kwin_blur_manager.as_ref().map(|manager| {
+                let blur = manager.blur(popup.wl_surface(), &self.queue_handle);
+                if let Some(region) = blur_region() {
+                    blur.set_region(Some(region.wl_region()));
+                }
+                blur.commit();
+                blur
+            });
+
+            if effect.is_none() && blur.is_none() {
+                tracing::info!("No blur protocol available; the popup will not be blurred");
+            }
+            (effect, blur)
+        } else {
+            (None, None)
+        };
+
         // Commit the surface to trigger configure
         popup.wl_surface().commit();
 
@@ -989,6 +1054,13 @@ impl ActiveEventLoop {
             crate::dpi::LogicalSize::new(settings.size.0, settings.size.1),
             viewport,
         );
+
+        // Held for the popup's lifetime: dropping either object tells the
+        // compositor to stop.
+        popup_state.background_effect = background_effect;
+        popup_state.blur = kwin_blur;
+        popup_state.shadow = shadow;
+        popup_state.corner_radius = corner_radius;
 
         // Set up compositor-driven tooltip positioning if requested
         if let Some((offset_x, offset_y)) = settings.tooltip_offset {

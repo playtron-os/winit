@@ -5,8 +5,12 @@
 
 use sctk::reexports::protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use sctk::shell::xdg::popup::Popup;
+use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
 
 use crate::dpi::LogicalSize;
+use crate::platform_impl::wayland::types::background_effect::BackgroundEffect;
+use crate::platform_impl::wayland::types::cosmic_corner_radius::CornerRadiusController;
+use crate::platform_impl::wayland::types::layer_shadow::ShadowController;
 use crate::platform_impl::wayland::types::cosmic_tooltip::TooltipHandle;
 use crate::platform_impl::wayland::WindowId;
 use crate::window::WindowId as PublicWindowId;
@@ -129,6 +133,25 @@ pub struct PopupSettings {
     pub constraint_adjustment: u32,
     /// Whether to grab input focus.
     pub grab: bool,
+    /// Ask the compositor to blur what is behind the popup.
+    ///
+    /// Needs a compositor implementing one of the blur protocols, and content
+    /// that is translucent — an opaque card has nothing to show the blur
+    /// through. The blurred area is the whole surface, so a surface padded out
+    /// for a client-drawn shadow would be blurred past its visible edge; pair
+    /// this with `shadow` instead of padding.
+    pub blur: bool,
+    /// Ask the compositor to draw a drop shadow behind the popup.
+    ///
+    /// The alternative to padding the surface out and drawing one, which does
+    /// not combine with `blur`: the blurred region would have to be inset to
+    /// match the padding, leaving two rectangles to keep in agreement.
+    pub shadow: bool,
+    /// Corner radius hinted to the compositor, in logical pixels.
+    ///
+    /// Rounds the blur and the shadow to match the card drawn on the surface.
+    /// Without it both come out square while the content is rounded.
+    pub corner_radius: Option<u32>,
     /// Window geometry (x, y, width, height) in logical pixels.
     ///
     /// Tells the compositor which part of the surface is visible content,
@@ -155,6 +178,9 @@ impl Default for PopupSettings {
             offset: (0, 0),
             constraint_adjustment: 0,
             grab: false,
+            blur: false,
+            shadow: false,
+            corner_radius: None,
             window_geometry: None,
             tooltip_offset: None,
             tooltip_anchor: None,
@@ -177,6 +203,18 @@ pub struct PopupState {
     pub viewport: Option<WpViewport>,
     /// Tooltip handle (if tooltip positioning is enabled for this popup).
     pub tooltip: Option<TooltipHandle>,
+    /// Background-effect handle, when the popup asked to be blurred.
+    ///
+    /// Held for the popup's lifetime: dropping it destroys the object and the
+    /// compositor stops blurring.
+    pub background_effect: Option<BackgroundEffect>,
+    /// The KDE blur handle, for compositors that implement that protocol
+    /// instead. Held for the same reason.
+    pub blur: Option<OrgKdeKwinBlur>,
+    /// Compositor-drawn shadow handle, held for the popup's lifetime.
+    pub shadow: Option<ShadowController>,
+    /// Corner radius handle, held for the popup's lifetime.
+    pub corner_radius: Option<CornerRadiusController>,
 }
 
 impl PopupState {
@@ -187,7 +225,18 @@ impl PopupState {
         size: LogicalSize<u32>,
         viewport: Option<WpViewport>,
     ) -> Self {
-        Self { popup, parent_id, size, configured: false, viewport, tooltip: None }
+        Self {
+            popup,
+            parent_id,
+            size,
+            configured: false,
+            viewport,
+            tooltip: None,
+            background_effect: None,
+            blur: None,
+            shadow: None,
+            corner_radius: None,
+        }
     }
 }
 

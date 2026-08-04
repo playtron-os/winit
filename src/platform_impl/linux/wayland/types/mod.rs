@@ -10,6 +10,7 @@ pub mod cosmic_tooltip;
 pub mod cosmic_voice_mode;
 pub mod cursor;
 pub mod kwin_blur;
+pub mod layer_shadow;
 pub mod wayland_dnd;
 pub mod wp_fractional_scaling;
 pub mod wp_viewporter;
