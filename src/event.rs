@@ -45,9 +45,6 @@ use smol_str::SmolStr;
 #[cfg(web_platform)]
 use web_time::Instant;
 
-#[cfg(wayland_platform)]
-pub use crate::platform_impl::wayland::types::cosmic_special_action::SpecialActionEvent;
-
 use crate::dpi::{PhysicalPosition, PhysicalSize};
 use crate::error::ExternalError;
 use crate::event_loop::AsyncRequestSerial;
@@ -67,6 +64,24 @@ pub mod dnd_action {
     pub const MOVE: u32 = 2;
     /// Ask the user which action to perform.
     pub const ASK: u32 = 4;
+}
+
+/// A resolved gesture on the device's special key.
+///
+/// Defined here rather than in the Wayland backend that produces it, for the
+/// same reason as [`DndWindowEvent`] below: it is named by a cross-platform
+/// [`WindowEvent`] variant, so a platform-gated definition would make the enum
+/// itself fail to compile everywhere else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpecialActionEvent {
+    /// Tapped. Take focus of the surface's text input; no voice is involved.
+    Activate,
+    /// A hold began. Start capturing audio.
+    HoldStart,
+    /// The hold ended. Stop capturing and process what was captured.
+    HoldEnd,
+    /// The gesture was abandoned. Discard any capture rather than process it.
+    Cancel,
 }
 
 /// Drag-and-drop events sent to windows.
