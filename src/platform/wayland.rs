@@ -23,12 +23,6 @@ use crate::window::{Window, WindowAttributes};
 
 pub use crate::window::Theme;
 
-// Re-export voice mode types for the public API
-#[cfg(wayland_platform)]
-pub use crate::platform_impl::wayland::types::cosmic_voice_mode::{
-    OrbState as VoiceModeOrbState, VoiceModeEvent,
-};
-
 // Re-export popup types for the public API
 #[cfg(wayland_platform)]
 pub use crate::platform_impl::wayland::types::xdg_popup::{
@@ -241,28 +235,6 @@ pub trait WindowExtWayland {
         duration_ms: u32,
     ) -> bool;
 
-    /// Set exclusive mode for this window using the COSMIC protocol.
-    ///
-    /// When exclusive mode is enabled, all other toplevel windows on the same
-    /// output are minimized by the compositor. When disabled, they are restored.
-    ///
-    /// This is useful for applications that need a clean, focused interface
-    /// without distractions from other windows (e.g., AI assistants, system
-    /// overlays, presentation modes).
-    ///
-    /// Returns `true` if the request was sent, `false` if:
-    /// - The window is not a Wayland window
-    /// - The compositor doesn't support the exclusive mode protocol
-    ///
-    /// # Arguments
-    /// * `exclusive` - `true` to enable exclusive mode, `false` to disable
-    fn set_exclusive_mode(&self, exclusive: bool) -> bool;
-
-    /// Check if exclusive mode is currently enabled for this window.
-    ///
-    /// Returns `true` if exclusive mode is enabled, `false` otherwise.
-    fn is_exclusive_mode(&self) -> bool;
-
     /// Set corner radius for this window using the COSMIC protocol.
     ///
     /// Communicates the corner radius hint to the compositor so it can
@@ -396,45 +368,6 @@ pub trait WindowExtWayland {
 
     /// Remove an embedded surface.
     fn remove_embed(&self, embed_id: u64) -> bool;
-
-    /// Register this window as a voice mode receiver.
-    ///
-    /// When registered, this window will receive voice mode events from the compositor
-    /// via `WindowEvent::VoiceMode` when:
-    /// - This window is focused and voice mode activates
-    /// - This is the default receiver and no other receiver is focused
-    ///
-    /// Returns `true` if registration was successful, `false` if:
-    /// - The window is not a Wayland window
-    /// - The compositor doesn't support the voice mode protocol
-    ///
-    /// # Arguments
-    /// * `is_default` - If true, this window becomes the default receiver for when
-    ///   no other registered window is focused.
-    fn register_voice_mode(&self, is_default: bool) -> bool;
-
-    /// Unregister this window as a voice mode receiver.
-    fn unregister_voice_mode(&self) -> bool;
-
-    /// Acknowledge a will_stop event from the compositor.
-    ///
-    /// This responds to a will_stop event, telling the compositor whether to
-    /// freeze the orb (transcription processing) or proceed with hiding.
-    ///
-    /// # Arguments
-    /// * `serial` - The serial from the will_stop event
-    /// * `freeze` - If true, freeze the orb in place. If false, proceed with hiding.
-    ///
-    /// Returns `true` if successful, `false` if this window is not a voice mode receiver.
-    fn voice_ack_stop(&self, serial: u32, freeze: bool) -> bool;
-
-    /// Dismiss the frozen voice orb.
-    ///
-    /// This tells the compositor to hide the orb when transcription completes
-    /// without spawning a new window (e.g., empty result or error).
-    ///
-    /// Returns `true` if successful, `false` if this window is not a voice mode receiver.
-    fn voice_dismiss(&self) -> bool;
 
     /// Start a Wayland drag-and-drop operation from this window.
     ///
@@ -669,26 +602,6 @@ impl WindowExtWayland for Window {
     }
 
     #[inline]
-    fn set_exclusive_mode(&self, exclusive: bool) -> bool {
-        match &self.window {
-            #[cfg(x11_platform)]
-            crate::platform_impl::Window::X(_) => false,
-            #[cfg(wayland_platform)]
-            crate::platform_impl::Window::Wayland(window) => window.set_exclusive_mode(exclusive),
-        }
-    }
-
-    #[inline]
-    fn is_exclusive_mode(&self) -> bool {
-        match &self.window {
-            #[cfg(x11_platform)]
-            crate::platform_impl::Window::X(_) => false,
-            #[cfg(wayland_platform)]
-            crate::platform_impl::Window::Wayland(window) => window.is_exclusive_mode(),
-        }
-    }
-
-    #[inline]
     fn set_corner_radius(
         &self,
         top_left: u32,
@@ -713,46 +626,6 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.set_backdrop_color(r, g, b, a),
-        }
-    }
-
-    #[inline]
-    fn register_voice_mode(&self, is_default: bool) -> bool {
-        match &self.window {
-            #[cfg(x11_platform)]
-            crate::platform_impl::Window::X(_) => false,
-            #[cfg(wayland_platform)]
-            crate::platform_impl::Window::Wayland(window) => window.register_voice_mode(is_default),
-        }
-    }
-
-    #[inline]
-    fn unregister_voice_mode(&self) -> bool {
-        match &self.window {
-            #[cfg(x11_platform)]
-            crate::platform_impl::Window::X(_) => false,
-            #[cfg(wayland_platform)]
-            crate::platform_impl::Window::Wayland(window) => window.unregister_voice_mode(),
-        }
-    }
-
-    #[inline]
-    fn voice_ack_stop(&self, serial: u32, freeze: bool) -> bool {
-        match &self.window {
-            #[cfg(x11_platform)]
-            crate::platform_impl::Window::X(_) => false,
-            #[cfg(wayland_platform)]
-            crate::platform_impl::Window::Wayland(window) => window.voice_ack_stop(serial, freeze),
-        }
-    }
-
-    #[inline]
-    fn voice_dismiss(&self) -> bool {
-        match &self.window {
-            #[cfg(x11_platform)]
-            crate::platform_impl::Window::X(_) => false,
-            #[cfg(wayland_platform)]
-            crate::platform_impl::Window::Wayland(window) => window.voice_dismiss(),
         }
     }
 

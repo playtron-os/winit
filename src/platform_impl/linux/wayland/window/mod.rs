@@ -490,23 +490,6 @@ impl Window {
         )
     }
 
-    /// Set exclusive mode for this window using the COSMIC protocol.
-    ///
-    /// When exclusive mode is enabled, all other toplevel windows on the same
-    /// output are minimized. When disabled, they are restored.
-    ///
-    /// Returns `true` if the request was sent, `false` if the protocol is not available.
-    #[inline]
-    pub fn set_exclusive_mode(&self, exclusive: bool) -> bool {
-        self.window_state.lock().unwrap().set_exclusive_mode(exclusive)
-    }
-
-    /// Check if exclusive mode is currently enabled for this window.
-    #[inline]
-    pub fn is_exclusive_mode(&self) -> bool {
-        self.window_state.lock().unwrap().is_exclusive_mode()
-    }
-
     /// Set corner radius for this window using the COSMIC protocol.
     ///
     /// Communicates the corner radius hint to the compositor so it can
@@ -634,32 +617,6 @@ impl Window {
     #[inline]
     pub fn remove_embed(&self, embed_id: u64) -> bool {
         self.window_state.lock().unwrap().remove_embed(embed_id)
-    }
-
-    /// Register this window as a voice mode receiver.
-    ///
-    /// Returns `true` if registration was successful, `false` if the protocol is not available.
-    #[inline]
-    pub fn register_voice_mode(&self, is_default: bool) -> bool {
-        self.window_state.lock().unwrap().register_voice_mode(is_default)
-    }
-
-    /// Unregister this window as a voice mode receiver.
-    #[inline]
-    pub fn unregister_voice_mode(&self) -> bool {
-        self.window_state.lock().unwrap().unregister_voice_mode()
-    }
-
-    /// Acknowledge a will_stop event from the compositor.
-    #[inline]
-    pub fn voice_ack_stop(&self, serial: u32, freeze: bool) -> bool {
-        self.window_state.lock().unwrap().voice_ack_stop(serial, freeze)
-    }
-
-    /// Dismiss the frozen voice orb.
-    #[inline]
-    pub fn voice_dismiss(&self) -> bool {
-        self.window_state.lock().unwrap().voice_dismiss()
     }
 
     /// Start a Wayland drag-and-drop operation from this window.

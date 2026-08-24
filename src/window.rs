@@ -1840,7 +1840,6 @@ pub enum ImePurpose {
     Terminal,
 }
 
-
 /// An opaque token used to activate the [`Window`].
 ///
 /// [`Window`]: crate::window::Window

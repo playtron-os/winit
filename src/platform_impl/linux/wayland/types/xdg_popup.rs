@@ -10,8 +10,8 @@ use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
 use crate::dpi::LogicalSize;
 use crate::platform_impl::wayland::types::background_effect::BackgroundEffect;
 use crate::platform_impl::wayland::types::cosmic_corner_radius::CornerRadiusController;
-use crate::platform_impl::wayland::types::layer_shadow::ShadowController;
 use crate::platform_impl::wayland::types::cosmic_tooltip::TooltipHandle;
+use crate::platform_impl::wayland::types::layer_shadow::ShadowController;
 use crate::platform_impl::wayland::WindowId;
 use crate::window::WindowId as PublicWindowId;
 

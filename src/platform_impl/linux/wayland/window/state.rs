@@ -37,6 +37,9 @@ use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
 use crate::platform_impl::wayland::logical_to_physical_rounded;
+use crate::platform_impl::wayland::types::background_effect::{
+    BackgroundEffect, BackgroundEffectManager,
+};
 use crate::platform_impl::wayland::types::cosmic_animated_resize::{
     AnimatedResizeController, CosmicAnimatedResizeManager,
 };
@@ -46,19 +49,10 @@ use crate::platform_impl::wayland::types::cosmic_backdrop_color::{
 use crate::platform_impl::wayland::types::cosmic_corner_radius::{
     CornerRadiusController, CosmicCornerRadiusManager,
 };
-use crate::platform_impl::wayland::types::cosmic_exclusive_mode::{
-    CosmicExclusiveModeManager, ExclusiveModeController,
-};
 use crate::platform_impl::wayland::types::cosmic_surface_embed::{
     CosmicSurfaceEmbedManager, EmbeddedSurface,
 };
-use crate::platform_impl::wayland::types::cosmic_voice_mode::{
-    CosmicVoiceModeManager, VoiceModeReceiver,
-};
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
-use crate::platform_impl::wayland::types::background_effect::{
-    BackgroundEffect, BackgroundEffectManager,
-};
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::wayland_dnd::{SharedDndOfferState, WaylandDndManager};
 use crate::platform_impl::wayland::types::xdg_foreign::ImportedToplevel;
@@ -198,9 +192,7 @@ pub struct WindowState {
     backdrop_color_controller: Option<BackdropColorController>,
 
     /// COSMIC exclusive mode manager.
-    exclusive_mode_manager: Option<CosmicExclusiveModeManager>,
     /// Active exclusive mode controller for this window.
-    exclusive_mode_controller: Option<ExclusiveModeController>,
 
     /// COSMIC surface embed manager.
     surface_embed_manager: Option<CosmicSurfaceEmbedManager>,
@@ -213,11 +205,6 @@ pub struct WindowState {
     /// Kept alive for the window's lifetime; dropping it removes the parent
     /// relationship in the compositor.
     xdg_imported_parent: Option<ImportedToplevel>,
-
-    /// COSMIC voice mode manager.
-    voice_mode_manager: Option<CosmicVoiceModeManager>,
-    /// Active voice mode receiver for this window.
-    voice_mode_receiver: Option<VoiceModeReceiver>,
 
     /// Wayland DnD manager (cloned from WinitState).
     dnd_manager: Option<WaylandDndManager>,
@@ -287,14 +274,10 @@ impl WindowState {
             corner_radius_controller: None,
             backdrop_color_manager: winit_state.backdrop_color_manager.clone(),
             backdrop_color_controller: None,
-            exclusive_mode_manager: winit_state.exclusive_mode_manager.clone(),
-            exclusive_mode_controller: None,
             surface_embed_manager: winit_state.surface_embed_manager.clone(),
             embedded_surfaces: std::collections::HashMap::new(),
             next_embed_id: 1,
             xdg_imported_parent: None,
-            voice_mode_manager: winit_state.voice_mode_manager.clone(),
-            voice_mode_receiver: None,
             dnd_manager: winit_state.dnd_manager.clone(),
             dnd_data_devices: winit_state.dnd_data_devices.clone(),
             dnd_shared_offer: winit_state.dnd_session.shared_offer.clone(),
@@ -1389,44 +1372,6 @@ impl WindowState {
         }
     }
 
-    /// Set exclusive mode for this window.
-    ///
-    /// When exclusive mode is enabled, all other toplevel windows on the same
-    /// output are minimized. When disabled, they are restored.
-    ///
-    /// Returns `true` if the request was sent, `false` if the protocol
-    /// is not available.
-    ///
-    /// # Arguments
-    /// * `exclusive` - `true` to enable exclusive mode, `false` to disable
-    #[inline]
-    pub fn set_exclusive_mode(&mut self, exclusive: bool) -> bool {
-        // Create controller if we don't have one yet
-        if self.exclusive_mode_controller.is_none() {
-            if let Some(manager) = self.exclusive_mode_manager.as_ref() {
-                let controller =
-                    manager.get_exclusive_mode(self.window.wl_surface(), &self.queue_handle);
-                self.exclusive_mode_controller = Some(controller);
-            } else {
-                tracing::trace!("Exclusive mode manager unavailable");
-                return false;
-            }
-        }
-
-        if let Some(controller) = self.exclusive_mode_controller.as_ref() {
-            tracing::trace!(exclusive, "Setting exclusive mode");
-            controller.set_exclusive(exclusive);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Check if exclusive mode is currently enabled for this window.
-    pub fn is_exclusive_mode(&self) -> bool {
-        self.exclusive_mode_controller.as_ref().map(|c| c.is_enabled()).unwrap_or(false)
-    }
-
     /// Set corner radius for this window.
     ///
     /// Communicates the corner radius hint to the compositor so it can
@@ -1493,109 +1438,6 @@ impl WindowState {
         } else {
             false
         }
-    }
-
-    /// Register this window as a voice mode receiver.
-    ///
-    /// Returns `true` if registration was successful, `false` if the protocol
-    /// is not available.
-    ///
-    /// # Arguments
-    /// * `is_default` - If true, this window becomes the default receiver
-    #[inline]
-    pub fn register_voice_mode(&mut self, is_default: bool) -> bool {
-        // Already registered
-        if self.voice_mode_receiver.is_some() {
-            tracing::trace!("Voice mode already registered for this window");
-            return true;
-        }
-
-        if let Some(manager) = self.voice_mode_manager.as_ref() {
-            let receiver =
-                manager.get_voice_mode(self.window.wl_surface(), is_default, &self.queue_handle);
-            self.voice_mode_receiver = Some(receiver);
-            tracing::info!(is_default, "Registered window as voice mode receiver");
-            true
-        } else {
-            tracing::trace!("Voice mode manager unavailable");
-            false
-        }
-    }
-
-    /// Unregister this window as a voice mode receiver.
-    #[inline]
-    pub fn unregister_voice_mode(&mut self) -> bool {
-        if let Some(receiver) = self.voice_mode_receiver.take() {
-            receiver.destroy();
-            tracing::info!("Unregistered window as voice mode receiver");
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Acknowledge a will_stop event from the compositor.
-    #[inline]
-    pub fn voice_ack_stop(&mut self, serial: u32, freeze: bool) -> bool {
-        if let Some(receiver) = self.voice_mode_receiver.as_ref() {
-            receiver.ack_stop(serial, freeze);
-            tracing::info!(serial, freeze, "Sent ack_stop to compositor");
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Dismiss the frozen voice orb.
-    ///
-    /// This tells the compositor to hide the orb when transcription completes
-    /// without spawning a new window (e.g., empty result or error).
-    #[inline]
-    pub fn voice_dismiss(&mut self) -> bool {
-        if let Some(receiver) = self.voice_mode_receiver.as_ref() {
-            receiver.dismiss();
-            tracing::info!("Sent dismiss to compositor");
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Take pending voice mode events from this window's receiver.
-    ///
-    /// Returns a list of events that should be sent as WindowEvent::VoiceMode.
-    pub fn take_voice_mode_events(&self) -> Vec<crate::event::VoiceModeWindowEvent> {
-        use crate::event::{VoiceModeOrbState, VoiceModeWindowEvent};
-        use crate::platform_impl::wayland::types::cosmic_voice_mode::{OrbState, VoiceModeEvent};
-
-        let Some(receiver) = self.voice_mode_receiver.as_ref() else {
-            return Vec::new();
-        };
-
-        receiver
-            .take_events()
-            .into_iter()
-            .map(|event| match event {
-                VoiceModeEvent::Start { orb_state } => {
-                    let orb_state = match orb_state {
-                        OrbState::Hidden => VoiceModeOrbState::Hidden,
-                        OrbState::Floating => VoiceModeOrbState::Floating,
-                        OrbState::Attached => VoiceModeOrbState::Attached,
-                        OrbState::Frozen => VoiceModeOrbState::Frozen,
-                        OrbState::Transitioning => VoiceModeOrbState::Transitioning,
-                    };
-                    VoiceModeWindowEvent::Start { orb_state }
-                },
-                VoiceModeEvent::Stop => VoiceModeWindowEvent::Stop,
-                VoiceModeEvent::Cancel => VoiceModeWindowEvent::Cancel,
-                VoiceModeEvent::OrbAttached { x, y, width, height } => {
-                    VoiceModeWindowEvent::OrbAttached { x, y, width, height }
-                },
-                VoiceModeEvent::OrbDetached => VoiceModeWindowEvent::OrbDetached,
-                VoiceModeEvent::WillStop { serial } => VoiceModeWindowEvent::WillStop { serial },
-                VoiceModeEvent::FocusInput => VoiceModeWindowEvent::FocusInput,
-            })
-            .collect()
     }
 
     /// Embed a toplevel by process ID into this window's surface.

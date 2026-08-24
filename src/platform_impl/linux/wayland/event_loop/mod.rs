@@ -526,16 +526,6 @@ impl<T: 'static> EventLoop<T> {
             }
         }
 
-        // Poll voice mode events from all windows and dispatch them
-        self.with_state(|state| {
-            for (&window_id, window) in state.windows.get_mut().iter_mut() {
-                let voice_events = window.lock().unwrap().take_voice_mode_events();
-                for voice_event in voice_events {
-                    buffer_sink.push_window_event(WindowEvent::VoiceMode(voice_event), window_id);
-                }
-            }
-        });
-
         // Drain pending DnD data and dispatch as DataReceived events
         self.with_state(|state| {
             let mut guard = state.dnd_session.shared_offer.lock().unwrap();
@@ -988,18 +978,21 @@ impl ActiveEventLoop {
 
         // A drop shadow drawn by the compositor rather than by padding the
         // surface out and drawing one — which does not combine with blur.
-        let shadow = settings.shadow.then(|| {
-            let controller = state
-                .layer_shadow_manager
-                .as_ref()
-                .map(|manager| manager.get_shadow(popup.wl_surface(), &self.queue_handle));
-            if let Some(controller) = controller.as_ref() {
-                controller.enable();
-            } else {
-                tracing::info!("No shadow protocol available; the popup will have no shadow");
-            }
-            controller
-        }).flatten();
+        let shadow = settings
+            .shadow
+            .then(|| {
+                let controller = state
+                    .layer_shadow_manager
+                    .as_ref()
+                    .map(|manager| manager.get_shadow(popup.wl_surface(), &self.queue_handle));
+                if let Some(controller) = controller.as_ref() {
+                    controller.enable();
+                } else {
+                    tracing::info!("No shadow protocol available; the popup will have no shadow");
+                }
+                controller
+            })
+            .flatten();
 
         // Blur behind the popup. Both protocols are driven from the one
         // setting: a compositor implements one or the other, and the one it
@@ -1064,7 +1057,6 @@ impl ActiveEventLoop {
 
         // Set up compositor-driven tooltip positioning if requested
         if let Some((offset_x, offset_y)) = settings.tooltip_offset {
-            
             if let Some(ref tooltip_manager) = state.tooltip_manager {
                 let popup_wl_surface = popup_state.popup.wl_surface();
                 let tooltip_handle = tooltip_manager.get_tooltip(

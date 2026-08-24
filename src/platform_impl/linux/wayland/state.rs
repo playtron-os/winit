@@ -30,14 +30,12 @@ use crate::platform_impl::wayland::seat::{
     KeyboardShortcutsInhibitState, PointerConstraintsState, RelativePointerState, TextInputState,
     WinitPointerData, WinitPointerDataExt, WinitSeatState,
 };
+use crate::platform_impl::wayland::types::background_effect::BackgroundEffectManager;
 use crate::platform_impl::wayland::types::cosmic_animated_resize::CosmicAnimatedResizeManager;
 use crate::platform_impl::wayland::types::cosmic_backdrop_color::CosmicBackdropColorManager;
 use crate::platform_impl::wayland::types::cosmic_corner_radius::CosmicCornerRadiusManager;
-use crate::platform_impl::wayland::types::cosmic_exclusive_mode::CosmicExclusiveModeManager;
 use crate::platform_impl::wayland::types::cosmic_surface_embed::CosmicSurfaceEmbedManager;
 use crate::platform_impl::wayland::types::cosmic_tooltip::CosmicTooltipManager;
-use crate::platform_impl::wayland::types::cosmic_voice_mode::CosmicVoiceModeManager;
-use crate::platform_impl::wayland::types::background_effect::BackgroundEffectManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::layer_shadow::LayerShadowManager;
 use crate::platform_impl::wayland::types::wayland_dnd::{DndSessionState, WaylandDndManager};
@@ -145,7 +143,6 @@ pub struct WinitState {
     pub backdrop_color_manager: Option<CosmicBackdropColorManager>,
 
     /// COSMIC exclusive mode manager.
-    pub exclusive_mode_manager: Option<CosmicExclusiveModeManager>,
 
     /// COSMIC surface embed manager.
     pub surface_embed_manager: Option<CosmicSurfaceEmbedManager>,
@@ -157,9 +154,6 @@ pub struct WinitState {
 
     /// COSMIC tooltip manager.
     pub tooltip_manager: Option<CosmicTooltipManager>,
-
-    /// COSMIC voice mode manager.
-    pub voice_mode_manager: Option<CosmicVoiceModeManager>,
 
     /// Wayland DnD (drag-and-drop) manager.
     pub dnd_manager: Option<WaylandDndManager>,
@@ -250,11 +244,9 @@ impl WinitState {
             animated_resize_manager: CosmicAnimatedResizeManager::new(globals, queue_handle).ok(),
             corner_radius_manager: CosmicCornerRadiusManager::new(globals, queue_handle).ok(),
             backdrop_color_manager: CosmicBackdropColorManager::new(globals, queue_handle).ok(),
-            exclusive_mode_manager: CosmicExclusiveModeManager::new(globals, queue_handle).ok(),
             surface_embed_manager: CosmicSurfaceEmbedManager::new(globals, queue_handle).ok(),
             xdg_foreign: XdgForeign::new(globals, queue_handle).ok(),
             tooltip_manager: CosmicTooltipManager::new(globals, queue_handle).ok(),
-            voice_mode_manager: CosmicVoiceModeManager::new(globals, queue_handle).ok(),
 
             dnd_manager: WaylandDndManager::new(globals, queue_handle).ok(),
             dnd_data_devices: Vec::new(),
