@@ -520,6 +520,18 @@ impl Window {
         self.window_state.lock().unwrap().set_backdrop_color(r, g, b, a)
     }
 
+    /// Register this window to receive the device's special key.
+    #[inline]
+    pub fn register_special_action(&self, is_default: bool) -> bool {
+        self.window_state.lock().unwrap().register_special_action(is_default)
+    }
+
+    /// Stop receiving the special key.
+    #[inline]
+    pub fn unregister_special_action(&self) -> bool {
+        self.window_state.lock().unwrap().unregister_special_action()
+    }
+
     /// Embed a toplevel by process ID into this window's surface.
     ///
     /// Returns an embed ID that can be used to update geometry or remove the embed,

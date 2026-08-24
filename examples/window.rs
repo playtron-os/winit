@@ -371,6 +371,9 @@ impl ApplicationHandler<UserEvent> for Application {
             WindowEvent::Dnd(event) => {
                 info!("Window={window_id:?} drag-and-drop {event:?}");
             },
+            WindowEvent::SpecialAction(action) => {
+                info!("Window={window_id:?} special action {action:?}");
+            },
             WindowEvent::RedrawRequested => {
                 if let Err(err) = window.draw() {
                     error!("Error drawing window: {err}");

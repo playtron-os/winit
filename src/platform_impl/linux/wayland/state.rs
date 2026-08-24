@@ -34,6 +34,7 @@ use crate::platform_impl::wayland::types::background_effect::BackgroundEffectMan
 use crate::platform_impl::wayland::types::cosmic_animated_resize::CosmicAnimatedResizeManager;
 use crate::platform_impl::wayland::types::cosmic_backdrop_color::CosmicBackdropColorManager;
 use crate::platform_impl::wayland::types::cosmic_corner_radius::CosmicCornerRadiusManager;
+use crate::platform_impl::wayland::types::cosmic_special_action::CosmicSpecialActionManager;
 use crate::platform_impl::wayland::types::cosmic_surface_embed::CosmicSurfaceEmbedManager;
 use crate::platform_impl::wayland::types::cosmic_tooltip::CosmicTooltipManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
@@ -138,6 +139,8 @@ pub struct WinitState {
 
     /// COSMIC corner radius manager.
     pub corner_radius_manager: Option<CosmicCornerRadiusManager>,
+    /// Routes the device's special key to a registered surface.
+    pub special_action_manager: Option<CosmicSpecialActionManager>,
 
     /// COSMIC backdrop color manager.
     pub backdrop_color_manager: Option<CosmicBackdropColorManager>,
@@ -243,6 +246,7 @@ impl WinitState {
             background_effect_manager: BackgroundEffectManager::new(globals, queue_handle).ok(),
             animated_resize_manager: CosmicAnimatedResizeManager::new(globals, queue_handle).ok(),
             corner_radius_manager: CosmicCornerRadiusManager::new(globals, queue_handle).ok(),
+            special_action_manager: CosmicSpecialActionManager::new(globals, queue_handle).ok(),
             backdrop_color_manager: CosmicBackdropColorManager::new(globals, queue_handle).ok(),
             surface_embed_manager: CosmicSurfaceEmbedManager::new(globals, queue_handle).ok(),
             xdg_foreign: XdgForeign::new(globals, queue_handle).ok(),

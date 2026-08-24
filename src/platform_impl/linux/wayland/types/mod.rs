@@ -4,6 +4,7 @@ pub mod background_effect;
 pub mod cosmic_animated_resize;
 pub mod cosmic_backdrop_color;
 pub mod cosmic_corner_radius;
+pub mod cosmic_special_action;
 pub mod cosmic_surface_embed;
 pub mod cosmic_tooltip;
 pub mod cursor;

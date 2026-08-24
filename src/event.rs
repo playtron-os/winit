@@ -45,6 +45,9 @@ use smol_str::SmolStr;
 #[cfg(web_platform)]
 use web_time::Instant;
 
+#[cfg(wayland_platform)]
+pub use crate::platform_impl::wayland::types::cosmic_special_action::SpecialActionEvent;
+
 use crate::dpi::{PhysicalPosition, PhysicalSize};
 use crate::error::ExternalError;
 use crate::event_loop::AsyncRequestSerial;
@@ -505,6 +508,17 @@ pub enum WindowEvent {
     /// Winit will aggregate duplicate redraw requests into a single event, to
     /// help avoid duplicating rendering work.
     RedrawRequested,
+
+    /// The device's special key was used while this window was the receiver.
+    ///
+    /// The compositor resolves the gesture and sends its meaning: a tap asks
+    /// the window to focus its input, a hold brackets push-to-talk.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - Only available on **Wayland** with a compositor supporting `zcosmic_special_action_v1`.
+    /// - **Other platforms:** Unsupported.
+    SpecialAction(SpecialActionEvent),
 
     /// Drag-and-drop event from the Wayland compositor.
     ///

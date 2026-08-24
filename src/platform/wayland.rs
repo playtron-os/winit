@@ -369,6 +369,24 @@ pub trait WindowExtWayland {
     /// Remove an embedded surface.
     fn remove_embed(&self, embed_id: u64) -> bool;
 
+    /// Register this window to receive the device's special key.
+    ///
+    /// The compositor owns the gesture — the key is usually a modifier it also
+    /// needs for its own chords — and sends the resolved meaning as
+    /// `WindowEvent::SpecialAction`: a tap asks the window to focus its input,
+    /// a hold brackets push-to-talk.
+    ///
+    /// When `is_default` the window also becomes the fallback receiver, used
+    /// whenever no registered surface is focused. Only one fallback exists at a
+    /// time; registering a second replaces the first.
+    ///
+    /// Returns `false` if this is not a Wayland window, or the compositor does
+    /// not implement `zcosmic_special_action_v1`.
+    fn register_special_action(&self, is_default: bool) -> bool;
+
+    /// Stop receiving the special key.
+    fn unregister_special_action(&self) -> bool;
+
     /// Start a Wayland drag-and-drop operation from this window.
     ///
     /// Creates a `wl_data_source`, offers the given MIME types, and calls
@@ -626,6 +644,28 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.set_backdrop_color(r, g, b, a),
+        }
+    }
+
+    #[inline]
+    fn register_special_action(&self, is_default: bool) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.register_special_action(is_default)
+            },
+        }
+    }
+
+    #[inline]
+    fn unregister_special_action(&self) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.unregister_special_action(),
         }
     }
 

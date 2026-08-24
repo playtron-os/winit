@@ -49,6 +49,9 @@ use crate::platform_impl::wayland::types::cosmic_backdrop_color::{
 use crate::platform_impl::wayland::types::cosmic_corner_radius::{
     CornerRadiusController, CosmicCornerRadiusManager,
 };
+use crate::platform_impl::wayland::types::cosmic_special_action::{
+    CosmicSpecialActionManager, SpecialActionEvent, SpecialActionReceiver,
+};
 use crate::platform_impl::wayland::types::cosmic_surface_embed::{
     CosmicSurfaceEmbedManager, EmbeddedSurface,
 };
@@ -183,6 +186,10 @@ pub struct WindowState {
 
     /// COSMIC corner radius manager.
     corner_radius_manager: Option<CosmicCornerRadiusManager>,
+    /// Routes the device's special key here while this surface is focused.
+    special_action_manager: Option<CosmicSpecialActionManager>,
+    /// Live registration, once the window has asked for one.
+    special_action_receiver: Option<SpecialActionReceiver>,
     /// Active corner radius controller for this window.
     corner_radius_controller: Option<CornerRadiusController>,
 
@@ -272,6 +279,8 @@ impl WindowState {
             animated_resize_controller: None,
             corner_radius_manager: winit_state.corner_radius_manager.clone(),
             corner_radius_controller: None,
+            special_action_manager: winit_state.special_action_manager.clone(),
+            special_action_receiver: None,
             backdrop_color_manager: winit_state.backdrop_color_manager.clone(),
             backdrop_color_controller: None,
             surface_embed_manager: winit_state.surface_embed_manager.clone(),
@@ -1438,6 +1447,43 @@ impl WindowState {
         } else {
             false
         }
+    }
+
+    /// Register this window to receive the device's special key.
+    ///
+    /// `is_default` also makes it the fallback receiver, used whenever no
+    /// registered surface is focused — the home screen wants that, a chat
+    /// window does not.
+    ///
+    /// Returns `false` if the compositor does not implement the protocol.
+    pub fn register_special_action(&mut self, is_default: bool) -> bool {
+        if self.special_action_receiver.is_some() {
+            return true;
+        }
+        let Some(manager) = self.special_action_manager.as_ref() else {
+            tracing::trace!("Special action manager unavailable");
+            return false;
+        };
+        self.special_action_receiver = Some(manager.get_special_action(
+            self.window.wl_surface(),
+            is_default,
+            &self.queue_handle,
+        ));
+        tracing::info!(is_default, "Registered window as a special action receiver");
+        true
+    }
+
+    /// Stop receiving the special key.
+    pub fn unregister_special_action(&mut self) -> bool {
+        self.special_action_receiver.take().is_some()
+    }
+
+    /// Take the gestures that have arrived since the last drain.
+    pub fn take_special_action_events(&self) -> Vec<SpecialActionEvent> {
+        self.special_action_receiver
+            .as_ref()
+            .map(SpecialActionReceiver::take_events)
+            .unwrap_or_default()
     }
 
     /// Embed a toplevel by process ID into this window's surface.
