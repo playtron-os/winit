@@ -20,6 +20,9 @@ include = [
     "/examples",
     "/FEATURES.md",
     "/LICENSE",
+    # The cosmic_* wayland modules run `generate_client_code!` on these at compile
+    # time, so a packaged crate without them fails to build.
+    "/resources",
     "/src",
     "!/src/platform_impl/web/script",
     "/src/platform_impl/web/script/**/*.min.js",
