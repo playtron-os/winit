@@ -22,7 +22,7 @@ use sctk::shell::xdg::popup::Popup;
 use tracing::warn;
 use wayland_protocols::xdg::shell::client::xdg_positioner;
 
-use super::types::xdg_popup::{PopupId, PopupSettings, PopupState};
+use super::types::xdg_popup::{holds_topmost_grab, PopupId, PopupSettings, PopupState};
 
 use crate::cursor::OnlyCursorImage;
 use crate::dpi::LogicalSize;
@@ -841,6 +841,28 @@ impl ActiveEventLoop {
     /// - The parent window doesn't exist
     /// - The compositor doesn't support xdg_popup
     pub fn create_popup(&self, settings: PopupSettings) -> Option<PopupId> {
+        self.create_popup_under(settings, None)
+    }
+
+    /// Create an xdg_popup parented to another popup.
+    ///
+    /// `settings.parent_id` must be the parent popup's toplevel: pointer and cursor handling key
+    /// on it. Returns None if the parent popup is missing, not configured yet or belongs to
+    /// another toplevel. xdg-shell also needs the parent mapped, which only the caller's first
+    /// buffer does.
+    pub fn create_child_popup(
+        &self,
+        parent_popup: PopupId,
+        settings: PopupSettings,
+    ) -> Option<PopupId> {
+        self.create_popup_under(settings, Some(parent_popup))
+    }
+
+    fn create_popup_under(
+        &self,
+        settings: PopupSettings,
+        parent_popup: Option<PopupId>,
+    ) -> Option<PopupId> {
         use sctk::compositor::{Region, Surface};
         use sctk::shell::xdg::{XdgPositioner, XdgSurface as XdgSurfaceTrait};
         use sctk::shell::WaylandSurface;
@@ -850,8 +872,8 @@ impl ActiveEventLoop {
         // Convert public WindowId to internal WindowId for lookup
         let internal_parent_id = WindowId(u64::from(settings.parent_id));
 
-        // Get the parent window's xdg_surface (clone to release lock)
-        let (parent_xdg_surface, parent_wl_surface, parent_scale_factor) = {
+        // Get the root window's xdg_surface (clone to release lock)
+        let (root_xdg_surface, root_wl_surface, parent_scale_factor) = {
             let parent_window = state.windows.borrow().get(&internal_parent_id)?.clone();
             let parent_guard = parent_window.lock().ok()?;
             (
@@ -861,8 +883,40 @@ impl ActiveEventLoop {
             )
         };
 
+        // A toplevel may parent a grabbing popup; a popup only if it holds the topmost grab.
+        let (parent_xdg_surface, parent_wl_surface, parent_holds_grab) = match parent_popup {
+            None => (root_xdg_surface, root_wl_surface, true),
+            Some(parent_popup) => {
+                let Some(parent) = state.popups.get(&parent_popup) else {
+                    tracing::warn!("create_popup: parent popup {parent_popup:?} not found");
+                    return None;
+                };
+                if !parent.configured {
+                    tracing::warn!(
+                        "create_popup: parent popup {parent_popup:?} not configured yet"
+                    );
+                    return None;
+                }
+                if parent.parent_id != internal_parent_id {
+                    tracing::warn!(
+                        "create_popup: parent popup {parent_popup:?} belongs to another window"
+                    );
+                    return None;
+                }
+                (
+                    parent.popup.xdg_surface().clone(),
+                    parent.popup.wl_surface().clone(),
+                    holds_topmost_grab(
+                        state.popups.iter().map(|(id, popup)| (*id, popup.grabbed)),
+                        parent_popup,
+                    ),
+                )
+            },
+        };
+
         tracing::debug!(
-            "create_popup: parent_scale_factor={}, size=({}, {}), anchor_rect=({}, {}, {}, {}), offset=({}, {}), anchor={:?}, gravity={:?}",
+            "create_popup: parent_popup={:?}, parent_scale_factor={}, size=({}, {}), anchor_rect=({}, {}, {}, {}), offset=({}, {}), anchor={:?}, gravity={:?}",
+            parent_popup,
             parent_scale_factor,
             settings.size.0, settings.size.1,
             settings.anchor_rect.0, settings.anchor_rect.1, settings.anchor_rect.2, settings.anchor_rect.3,
@@ -923,7 +977,13 @@ impl ActiveEventLoop {
             .map(|vp_state| vp_state.get_viewport(popup.wl_surface(), &self.queue_handle));
 
         // Set up grab for auto-dismiss on click-outside
-        if settings.grab {
+        let mut grabbed = false;
+        if settings.grab && !parent_holds_grab {
+            // A grab under anything but the topmost grab is an xdg-shell protocol error.
+            tracing::warn!(
+                "create_popup: parent popup isn't the topmost grab; creating this one without"
+            );
+        } else if settings.grab {
             // Find the first pointer's seat and latest button serial for the grab.
             // ThemedPointer wraps WlPointer which has WinitPointerData attached.
             let grab_info = state.pointer_surfaces.values().next().and_then(|ptr| {
@@ -941,6 +1001,7 @@ impl ActiveEventLoop {
 
             if let Some((seat, serial)) = grab_info {
                 popup.xdg_popup().grab(&seat, serial);
+                grabbed = true;
             }
         }
 
@@ -1063,6 +1124,8 @@ impl ActiveEventLoop {
         popup_state.blur = kwin_blur;
         popup_state.shadow = shadow;
         popup_state.corner_radius = corner_radius;
+        popup_state.parent_popup = parent_popup;
+        popup_state.grabbed = grabbed;
 
         // Set up compositor-driven tooltip positioning if requested
         if let Some((offset_x, offset_y)) = settings.tooltip_offset {
@@ -1097,10 +1160,22 @@ impl ActiveEventLoop {
         Some(popup_id)
     }
 
-    /// Destroy a popup surface.
+    /// Destroy a popup surface, and first any popups below it.
+    ///
+    /// Returns whether the id was one winit still knows: a live popup is destroyed, and one the
+    /// compositor already dismissed is left to finish the grace window its `Done` opened.
     pub fn destroy_popup(&self, popup_id: PopupId) -> bool {
         let mut state = self.state.borrow_mut();
-        state.popups.remove(&popup_id).is_some()
+        let Some(children) = state.destroy_popup_tree(popup_id) else {
+            return false;
+        };
+        // Live children the caller didn't destroy first still have to be reported closed.
+        if !children.is_empty() {
+            use super::types::xdg_popup::PopupEvent;
+            state.popup_events.extend(children.into_iter().map(|id| PopupEvent::Done { id }));
+            self.event_loop_awakener.ping();
+        }
+        true
     }
 
     /// Get the wl_surface for a popup (for rendering).
@@ -1171,8 +1246,12 @@ impl ActiveEventLoop {
     }
 
     /// Get pending popup events and clear the queue.
+    ///
+    /// Also destroys popups dismissed before the previous take, whose `Done` has been handled by
+    /// now; take once per event loop iteration.
     pub fn take_popup_events(&self) -> Vec<super::types::xdg_popup::PopupEvent> {
         let mut state = self.state.borrow_mut();
+        state.release_dismissed_popups();
         std::mem::take(&mut state.popup_events)
     }
 }

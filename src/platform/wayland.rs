@@ -46,9 +46,33 @@ pub trait ActiveEventLoopExtWayland {
     #[cfg(wayland_platform)]
     fn create_popup(&self, settings: PopupSettings) -> Option<PopupId>;
 
+    /// Create an xdg_popup parented to another popup, e.g. a submenu.
+    ///
+    /// `settings.parent_id` must be the toplevel the parent popup belongs to;
+    /// `anchor_rect` is relative to the parent popup. A `grab` is only sent when
+    /// the parent popup holds the topmost grab, as xdg-shell requires; otherwise
+    /// the popup is created without it. xdg-shell also needs the parent mapped,
+    /// so draw it before nesting under it.
+    ///
+    /// Returns None if:
+    /// - The [`ActiveEventLoop`] is not using Wayland
+    /// - The parent popup doesn't exist or isn't configured yet
+    /// - `settings.parent_id` isn't the parent popup's toplevel
+    /// - The compositor doesn't support xdg_popup
+    #[cfg(wayland_platform)]
+    fn create_child_popup(&self, parent_popup: PopupId, settings: PopupSettings)
+        -> Option<PopupId>;
+
     /// Destroy a popup surface.
     ///
-    /// Returns true if the popup was found and destroyed.
+    /// Returns true if the popup was one winit still knows about. Child popups
+    /// still alive are destroyed first and reported as [`PopupEvent::Done`],
+    /// since xdg-shell forbids destroying a popup under a live child. A popup
+    /// the compositor already dismissed is not destroyed here: it is left to
+    /// finish the grace window its `Done` opened, so it outlives this call by
+    /// one [`take_popup_events`], and this still answers true.
+    ///
+    /// [`take_popup_events`]: ActiveEventLoopExtWayland::take_popup_events
     #[cfg(wayland_platform)]
     fn destroy_popup(&self, popup_id: PopupId) -> bool;
 
@@ -72,6 +96,10 @@ pub trait ActiveEventLoopExtWayland {
     fn resize_popup(&self, popup_id: PopupId, width: u32, height: u32) -> bool;
 
     /// Get pending popup events and clear the queue.
+    ///
+    /// Popups the compositor dismissed stay alive until the take after the one
+    /// that returned their [`PopupEvent::Done`], so stop drawing to them before
+    /// taking again; take once per event loop iteration.
     #[cfg(wayland_platform)]
     fn take_popup_events(&self) -> Vec<PopupEvent>;
 }
@@ -86,6 +114,21 @@ impl ActiveEventLoopExtWayland for ActiveEventLoop {
     fn create_popup(&self, settings: PopupSettings) -> Option<PopupId> {
         match &self.p {
             crate::platform_impl::ActiveEventLoop::Wayland(w) => w.create_popup(settings),
+            #[cfg(x11_platform)]
+            _ => None,
+        }
+    }
+
+    #[cfg(wayland_platform)]
+    fn create_child_popup(
+        &self,
+        parent_popup: PopupId,
+        settings: PopupSettings,
+    ) -> Option<PopupId> {
+        match &self.p {
+            crate::platform_impl::ActiveEventLoop::Wayland(w) => {
+                w.create_child_popup(parent_popup, settings)
+            },
             #[cfg(x11_platform)]
             _ => None,
         }

@@ -44,7 +44,10 @@ use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScali
 use crate::platform_impl::wayland::types::wp_viewporter::ViewporterState;
 use crate::platform_impl::wayland::types::xdg_activation::XdgActivationState;
 use crate::platform_impl::wayland::types::xdg_foreign::XdgForeign;
-use crate::platform_impl::wayland::types::xdg_popup::{PopupEvent, PopupId, PopupState};
+use crate::platform_impl::wayland::types::xdg_popup::{
+    plan_destroy_tree, release_dismissed, subtree_leaf_first, DismissedPopup, PopupEvent, PopupId,
+    PopupState,
+};
 use crate::platform_impl::wayland::types::xdg_toplevel_icon::ToplevelIconManager;
 use crate::platform_impl::wayland::window::{WindowRequests, WindowState};
 use crate::platform_impl::wayland::{WaylandError, WindowId};
@@ -173,6 +176,10 @@ pub struct WinitState {
     /// Pending popup events to deliver to the application.
     pub popup_events: Vec<PopupEvent>,
 
+    /// Popups the compositor dismissed, children ahead of parents. Kept alive until their `Done`
+    /// has been handled: the app may still present to them, and a destroyed wl_surface is fatal.
+    pub dismissed_popups: Vec<DismissedPopup>,
+
     /// Loop handle to re-register event sources, such as keyboard repeat.
     pub loop_handle: LoopHandle<'static, Self>,
 
@@ -258,6 +265,7 @@ impl WinitState {
 
             popups: Default::default(),
             popup_events: Vec::new(),
+            dismissed_popups: Vec::new(),
 
             seats,
             text_input_state: TextInputState::new(globals, queue_handle).ok(),
@@ -644,9 +652,65 @@ impl PopupHandler for WinitState {
             .map(|(id, _)| *id);
 
         if let Some(id) = popup_id {
-            self.popups.remove(&id);
-            self.popup_events.push(PopupEvent::Done { id });
+            for (id, state) in self.take_popup_tree(id) {
+                self.popup_events.push(PopupEvent::Done { id });
+                self.dismissed_popups.push(DismissedPopup { id, state, reported: false });
+            }
             self.dispatched_events = true;
         }
+    }
+}
+
+impl WinitState {
+    /// Takes `id` and its live descendants out of `popups`, children ahead of parents, without
+    /// dropping them.
+    fn take_popup_tree(&mut self, id: PopupId) -> Vec<(PopupId, PopupState)> {
+        if !self.popups.contains_key(&id) {
+            return Vec::new();
+        }
+        let order =
+            subtree_leaf_first(self.popups.iter().map(|(id, popup)| (*id, popup.parent_popup)), id);
+        order.into_iter().filter_map(|id| Some((id, self.popups.remove(&id)?))).collect()
+    }
+
+    /// Destroys `id` and every live popup below it, children first: destroying a popup under a
+    /// live child is `not_the_topmost_popup`.
+    ///
+    /// Descendants the compositor already dismissed are left where they are, to finish the grace
+    /// window their `Done` opened. Closing the menu is the usual answer to a submenu's `Done`, so
+    /// this is the common case rather than a corner of one, and dropping them here would destroy
+    /// a wl_surface the app may still be presenting to in the same turn it learned it was gone.
+    ///
+    /// Returns the live descendants destroyed with it, or `None` if `id` is neither live nor
+    /// dismissed.
+    pub fn destroy_popup_tree(&mut self, id: PopupId) -> Option<Vec<PopupId>> {
+        let dismissed: Vec<PopupId> = self.dismissed_popups.iter().map(|p| p.id).collect();
+        if !self.popups.contains_key(&id) && !dismissed.contains(&id) {
+            return None;
+        }
+        let links: Vec<_> = self
+            .popups
+            .iter()
+            .map(|(id, popup)| (*id, popup.parent_popup))
+            .chain(self.dismissed_popups.iter().map(|p| (p.id, p.state.parent_popup)))
+            .collect();
+        let plan = plan_destroy_tree(links, &dismissed, id);
+        if !plan.held.is_empty() {
+            tracing::debug!("destroy_popup: {:?} stay until their grace window is up", plan.held);
+        }
+        let mut live_children = Vec::new();
+        for popup in plan.destroy {
+            if self.popups.remove(&popup).is_some() && popup != id {
+                live_children.push(popup);
+            }
+        }
+        Some(live_children)
+    }
+
+    /// Drops dismissed popups whose `Done` an earlier take handed out, and marks the rest as
+    /// handed out by this one.
+    pub fn release_dismissed_popups(&mut self) {
+        // Dropped front to back, so children still go ahead of parents.
+        drop(release_dismissed(&mut self.dismissed_popups));
     }
 }
