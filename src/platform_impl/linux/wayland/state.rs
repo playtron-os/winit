@@ -37,6 +37,7 @@ use crate::platform_impl::wayland::types::cosmic_corner_radius::CosmicCornerRadi
 use crate::platform_impl::wayland::types::cosmic_special_action::CosmicSpecialActionManager;
 use crate::platform_impl::wayland::types::cosmic_surface_embed::CosmicSurfaceEmbedManager;
 use crate::platform_impl::wayland::types::cosmic_tooltip::CosmicTooltipManager;
+use crate::platform_impl::wayland::types::kora_halo_header::KoraHaloHeaderManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::layer_shadow::LayerShadowManager;
 use crate::platform_impl::wayland::types::wayland_dnd::{DndSessionState, WaylandDndManager};
@@ -161,6 +162,10 @@ pub struct WinitState {
     /// COSMIC tooltip manager.
     pub tooltip_manager: Option<CosmicTooltipManager>,
 
+    /// Kora Halo header manager, for letting the Halo float over a window's
+    /// top edge instead of reserving room above it.
+    pub halo_header_manager: Option<KoraHaloHeaderManager>,
+
     /// Wayland DnD (drag-and-drop) manager.
     pub dnd_manager: Option<WaylandDndManager>,
 
@@ -258,6 +263,7 @@ impl WinitState {
             surface_embed_manager: CosmicSurfaceEmbedManager::new(globals, queue_handle).ok(),
             xdg_foreign: XdgForeign::new(globals, queue_handle).ok(),
             tooltip_manager: CosmicTooltipManager::new(globals, queue_handle).ok(),
+            halo_header_manager: KoraHaloHeaderManager::new(globals, queue_handle).ok(),
 
             dnd_manager: WaylandDndManager::new(globals, queue_handle).ok(),
             dnd_data_devices: Vec::new(),

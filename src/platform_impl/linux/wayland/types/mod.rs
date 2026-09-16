@@ -8,6 +8,7 @@ pub mod cosmic_special_action;
 pub mod cosmic_surface_embed;
 pub mod cosmic_tooltip;
 pub mod cursor;
+pub mod kora_halo_header;
 pub mod kwin_blur;
 pub mod layer_shadow;
 pub mod wayland_dnd;

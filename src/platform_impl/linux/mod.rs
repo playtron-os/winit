@@ -78,6 +78,11 @@ pub struct PlatformSpecificWindowAttributes {
     /// Used by portal file-chooser dialogs to attach to the requesting app's
     /// window. Ignored on X11.
     pub wayland_parent: Option<String>,
+    /// Wayland-only: let Kora's Halo header float over the window's top edge
+    /// (`kora_halo_header_manager_v1` overlay mode) instead of reserving room
+    /// above it. For windows laid out chromeless, whose first row already
+    /// clears the Halo. Ignored where the compositor has no such global.
+    pub halo_header_overlay: bool,
     #[cfg(x11_platform)]
     pub x11: X11WindowAttributes,
 }
@@ -102,6 +107,7 @@ impl Default for PlatformSpecificWindowAttributes {
             name: None,
             activation_token: None,
             wayland_parent: None,
+            halo_header_overlay: false,
             #[cfg(x11_platform)]
             x11: X11WindowAttributes {
                 visual_id: None,

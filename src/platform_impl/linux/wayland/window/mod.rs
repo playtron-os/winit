@@ -14,7 +14,7 @@ use sctk::reexports::protocols::xdg::activation::v1::client::xdg_activation_v1::
 use sctk::shell::xdg::window::{Window as SctkWindow, WindowDecorations};
 use sctk::shell::WaylandSurface;
 
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::dpi::{LogicalSize, PhysicalPosition, PhysicalSize, Position, Size};
 use crate::error::{ExternalError, NotSupportedError, OsError as RootOsError};
@@ -195,6 +195,19 @@ impl Window {
                 },
                 None => warn!(
                     "xdg-foreign unsupported by the compositor; cannot parent window to {handle}"
+                ),
+            }
+        }
+
+        // Let the Halo float over the window's top edge, if asked. The
+        // protocol only accepts the mode between the toplevel role and the
+        // initial commit, so this is its one chance.
+        if attributes.platform_specific.halo_header_overlay {
+            match state.halo_header_manager.as_ref() {
+                Some(halo) => halo.set_overlay(&surface),
+                None => debug!(
+                    "kora_halo_header_manager_v1 unsupported by the compositor; keeping reserved \
+                     decoration space"
                 ),
             }
         }

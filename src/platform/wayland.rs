@@ -815,6 +815,16 @@ pub trait WindowAttributesExtWayland {
     /// the requesting application's window. No-op if the compositor lacks
     /// `zxdg_importer_v2`.
     fn with_wayland_parent(self, handle: impl Into<String>) -> Self;
+
+    /// Let Kora's Halo header float over this window's top edge instead of
+    /// reserving room above it (`kora_halo_header_manager_v1`, overlay mode).
+    ///
+    /// For a window laid out chromeless: its content is full-bleed and its
+    /// first row already sits clear of the Halo, so the pill can overlap the
+    /// top edge. The mode is sent before the window's initial commit, which is
+    /// the only time the protocol accepts it. No-op if the compositor lacks
+    /// the global.
+    fn with_halo_header_overlay(self, overlay: bool) -> Self;
 }
 
 impl WindowAttributesExtWayland for WindowAttributes {
@@ -828,6 +838,12 @@ impl WindowAttributesExtWayland for WindowAttributes {
     #[inline]
     fn with_wayland_parent(mut self, handle: impl Into<String>) -> Self {
         self.platform_specific.wayland_parent = Some(handle.into());
+        self
+    }
+
+    #[inline]
+    fn with_halo_header_overlay(mut self, overlay: bool) -> Self {
+        self.platform_specific.halo_header_overlay = overlay;
         self
     }
 }
