@@ -8,6 +8,7 @@ use sctk::shell::xdg::popup::Popup;
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
 
 use crate::dpi::LogicalSize;
+use crate::event::WindowEvent;
 use crate::platform_impl::wayland::types::background_effect::BackgroundEffect;
 use crate::platform_impl::wayland::types::cosmic_corner_radius::CornerRadiusController;
 use crate::platform_impl::wayland::types::cosmic_tooltip::TooltipHandle;
@@ -384,6 +385,9 @@ pub enum PopupEvent {
     PointerMotion { id: PopupId, x: f64, y: f64 },
     /// Pointer button pressed/released on the popup surface.
     PointerButton { id: PopupId, button: u32, pressed: bool },
+    /// Keyboard input on the popup surface while it has keyboard focus: `Focused`,
+    /// `ModifiersChanged` and `KeyboardInput`, as a window receives them.
+    Window { id: PopupId, event: WindowEvent },
 }
 
 #[cfg(test)]

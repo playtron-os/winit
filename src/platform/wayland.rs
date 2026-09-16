@@ -100,6 +100,9 @@ pub trait ActiveEventLoopExtWayland {
     /// Popups the compositor dismissed stay alive until the take after the one
     /// that returned their [`PopupEvent::Done`], so stop drawing to them before
     /// taking again; take once per event loop iteration.
+    ///
+    /// A popup the compositor gives keyboard focus, like a grabbing menu,
+    /// reports its focus, modifiers and keys as [`PopupEvent::Window`].
     #[cfg(wayland_platform)]
     fn take_popup_events(&self) -> Vec<PopupEvent>;
 }

@@ -19,6 +19,7 @@ use crate::keyboard::ModifiersState;
 use crate::platform_impl::common::xkb::Context;
 use crate::platform_impl::wayland::event_loop::sink::EventSink;
 use crate::platform_impl::wayland::state::WinitState;
+use crate::platform_impl::wayland::types::xdg_popup::{PopupEvent, PopupId};
 use crate::platform_impl::wayland::{self, DeviceId, WindowId};
 
 impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
@@ -62,6 +63,28 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                 },
             },
             WlKeyboardEvent::Enter { surface, .. } => {
+                // A popup given keyboard focus, like a grabbing menu; its surface is no window's.
+                let popup = state
+                    .popups
+                    .iter()
+                    .find(|(_, popup)| popup.popup.wl_surface() == &surface)
+                    .map(|(id, _)| *id);
+                if let Some(id) = popup {
+                    keyboard_state.current_repeat = None;
+                    if let Some(token) = keyboard_state.repeat_token.take() {
+                        keyboard_state.loop_handle.remove(token);
+                    }
+
+                    *data.focus.lock().unwrap() = Some(KeyboardFocus::Popup(id));
+
+                    let pending = std::mem::take(&mut seat_state.modifiers_pending)
+                        .then_some(seat_state.modifiers);
+                    state.popup_events.extend(popup_enter_events(id, pending));
+                    // Popup events aren't in the sink the Wayland source checks.
+                    state.dispatched_events = true;
+                    return;
+                }
+
                 let window_id = wayland::make_wid(&surface);
 
                 // Mark the window as focused.
@@ -81,7 +104,7 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                     keyboard_state.loop_handle.remove(token);
                 }
 
-                *data.window_id.lock().unwrap() = Some(window_id);
+                *data.focus.lock().unwrap() = Some(KeyboardFocus::Window(window_id));
 
                 // The keyboard focus is considered as general focus.
                 if was_unfocused {
@@ -106,6 +129,13 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                     keyboard_state.loop_handle.remove(token);
                 }
 
+                // Not looked up by surface: a destroyed popup's leave names one winit dropped.
+                if let Some(id) = take_popup_focus(&mut data.focus.lock().unwrap()) {
+                    state.popup_events.extend(popup_leave_events(id));
+                    state.dispatched_events = true;
+                    return;
+                }
+
                 // NOTE: The check whether the window exists is essential as we might get a
                 // nil surface, regardless of what protocol says.
                 let focused = match state.windows.get_mut().get(&window_id) {
@@ -119,7 +149,7 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
 
                 // We don't need to update it above, because the next `Enter` will overwrite
                 // anyway.
-                *data.window_id.lock().unwrap() = None;
+                *data.focus.lock().unwrap() = None;
 
                 if !focused {
                     // Notify that no modifiers are being pressed.
@@ -134,9 +164,10 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
             WlKeyboardEvent::Key { key, state: WEnum::Value(WlKeyState::Pressed), .. } => {
                 let key = key + 8;
 
-                key_input(
+                state.dispatched_events |= key_input(
                     keyboard_state,
                     &mut state.events_sink,
+                    &mut state.popup_events,
                     data,
                     key,
                     ElementState::Pressed,
@@ -189,6 +220,7 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                         key_input(
                             keyboard_state,
                             &mut state.events_sink,
+                            &mut state.popup_events,
                             data,
                             repeat_keycode,
                             ElementState::Pressed,
@@ -206,9 +238,10 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
             WlKeyboardEvent::Key { key, state: WEnum::Value(WlKeyState::Released), .. } => {
                 let key = key + 8;
 
-                key_input(
+                state.dispatched_events |= key_input(
                     keyboard_state,
                     &mut state.events_sink,
+                    &mut state.popup_events,
                     data,
                     key,
                     ElementState::Released,
@@ -238,18 +271,17 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                 seat_state.modifiers = xkb_state.modifiers().into();
 
                 // HACK: part of the workaround from `WlKeyboardEvent::Enter`.
-                let window_id = match *data.window_id.lock().unwrap() {
-                    Some(window_id) => window_id,
+                let focus = match *data.focus.lock().unwrap() {
+                    Some(focus) => focus,
                     None => {
                         seat_state.modifiers_pending = true;
                         return;
                     },
                 };
 
-                state.events_sink.push_window_event(
-                    WindowEvent::ModifiersChanged(seat_state.modifiers.into()),
-                    window_id,
-                );
+                let event = WindowEvent::ModifiersChanged(seat_state.modifiers.into());
+                state.dispatched_events |=
+                    focus.push(event, &mut state.events_sink, &mut state.popup_events);
             },
             WlKeyboardEvent::RepeatInfo { rate, delay } => {
                 keyboard_state.repeat_info = if rate == 0 {
@@ -345,8 +377,8 @@ impl Default for RepeatInfo {
 /// Keyboard user data.
 #[derive(Debug)]
 pub struct KeyboardData {
-    /// The currently focused window surface. Could be `None` on bugged compositors, like mutter.
-    window_id: Mutex<Option<WindowId>>,
+    /// The currently focused surface. Could be `None` on bugged compositors, like mutter.
+    focus: Mutex<Option<KeyboardFocus>>,
 
     /// The seat used to create this keyboard.
     seat: WlSeat,
@@ -354,27 +386,170 @@ pub struct KeyboardData {
 
 impl KeyboardData {
     pub fn new(seat: WlSeat) -> Self {
-        Self { window_id: Default::default(), seat }
+        Self { focus: Default::default(), seat }
     }
 }
 
+/// The surface holding keyboard focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyboardFocus {
+    Window(WindowId),
+    Popup(PopupId),
+}
+
+impl KeyboardFocus {
+    /// Queues `event` for this surface. Returns whether it went to a popup: the Wayland source
+    /// only counts the window sink as dispatched events.
+    fn push(
+        self,
+        event: WindowEvent,
+        windows: &mut EventSink,
+        popups: &mut Vec<PopupEvent>,
+    ) -> bool {
+        match self {
+            Self::Window(window_id) => {
+                windows.push_window_event(event, window_id);
+                false
+            },
+            Self::Popup(id) => {
+                popups.push(PopupEvent::Window { id, event });
+                true
+            },
+        }
+    }
+}
+
+/// Takes the focus if a popup holds it, whatever surface the leave names.
+fn take_popup_focus(focus: &mut Option<KeyboardFocus>) -> Option<PopupId> {
+    match *focus {
+        Some(KeyboardFocus::Popup(id)) => {
+            *focus = None;
+            Some(id)
+        },
+        _ => None,
+    }
+}
+
+/// What a popup reports taking keyboard focus: always focused, since a popup's enter can't
+/// repeat, then the modifiers held back while nothing had focus.
+fn popup_enter_events(id: PopupId, pending: Option<ModifiersState>) -> Vec<PopupEvent> {
+    std::iter::once(WindowEvent::Focused(true))
+        .chain(pending.map(|modifiers| WindowEvent::ModifiersChanged(modifiers.into())))
+        .map(|event| PopupEvent::Window { id, event })
+        .collect()
+}
+
+/// What a popup reports losing keyboard focus, in the order a window does.
+fn popup_leave_events(id: PopupId) -> [PopupEvent; 2] {
+    [WindowEvent::ModifiersChanged(ModifiersState::empty().into()), WindowEvent::Focused(false)]
+        .map(|event| PopupEvent::Window { id, event })
+}
+
+/// Returns whether the key went to a popup.
 fn key_input(
     keyboard_state: &mut KeyboardState,
     event_sink: &mut EventSink,
+    popup_events: &mut Vec<PopupEvent>,
     data: &KeyboardData,
     keycode: u32,
     state: ElementState,
     repeat: bool,
-) {
-    let window_id = match *data.window_id.lock().unwrap() {
-        Some(window_id) => window_id,
-        None => return,
+) -> bool {
+    let focus = match *data.focus.lock().unwrap() {
+        Some(focus) => focus,
+        None => return false,
     };
 
     let device_id = crate::event::DeviceId(crate::platform_impl::DeviceId::Wayland(DeviceId));
     if let Some(mut key_context) = keyboard_state.xkb_context.key_context() {
         let event = key_context.process_key_event(keycode, state, repeat);
         let event = WindowEvent::KeyboardInput { device_id, event, is_synthetic: false };
-        event_sink.push_window_event(event, window_id);
+        return focus.push(event, event_sink, popup_events);
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        popup_enter_events, popup_leave_events, take_popup_focus, KeyboardFocus, PopupEvent,
+        PopupId, WindowId,
+    };
+    use crate::event::{Event, WindowEvent};
+    use crate::keyboard::ModifiersState;
+    use crate::platform_impl::wayland::event_loop::sink::EventSink;
+
+    /// Each popup event's popup and window event.
+    fn window_events(events: &[PopupEvent]) -> Vec<(PopupId, WindowEvent)> {
+        events
+            .iter()
+            .map(|event| match event {
+                PopupEvent::Window { id, event } => (*id, event.clone()),
+                other => panic!("expected a window event, got {other:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn window_focus_queues_in_the_window_sink() {
+        let (mut windows, mut popups) = (EventSink::new(), Vec::new());
+        let went_to_popup = KeyboardFocus::Window(WindowId(7)).push(
+            WindowEvent::Focused(true),
+            &mut windows,
+            &mut popups,
+        );
+        assert!(!went_to_popup);
+        assert!(popups.is_empty());
+        assert!(matches!(windows.window_events.as_slice(), [Event::WindowEvent {
+            event: WindowEvent::Focused(true),
+            ..
+        }]));
+    }
+
+    #[test]
+    fn popup_focus_queues_as_a_popup_event() {
+        let (mut windows, mut popups) = (EventSink::new(), Vec::new());
+        let modifiers = WindowEvent::ModifiersChanged(ModifiersState::SHIFT.into());
+        let went_to_popup =
+            KeyboardFocus::Popup(PopupId(3)).push(modifiers.clone(), &mut windows, &mut popups);
+        assert!(went_to_popup, "flagged, since the Wayland source only checks the window sink");
+        assert!(windows.is_empty());
+        assert_eq!(window_events(&popups), vec![(PopupId(3), modifiers)]);
+    }
+
+    #[test]
+    fn leave_takes_only_a_popups_focus() {
+        let mut focus = Some(KeyboardFocus::Popup(PopupId(3)));
+        assert_eq!(take_popup_focus(&mut focus), Some(PopupId(3)));
+        assert_eq!(focus, None);
+
+        let mut focus = Some(KeyboardFocus::Window(WindowId(7)));
+        assert_eq!(take_popup_focus(&mut focus), None);
+        assert_eq!(focus, Some(KeyboardFocus::Window(WindowId(7))), "the window path clears it");
+
+        let mut focus = None;
+        assert_eq!(take_popup_focus(&mut focus), None);
+    }
+
+    #[test]
+    fn popup_enter_focuses_then_sends_held_modifiers() {
+        let id = PopupId(3);
+        assert_eq!(window_events(&popup_enter_events(id, None)), vec![(
+            id,
+            WindowEvent::Focused(true)
+        )]);
+        assert_eq!(window_events(&popup_enter_events(id, Some(ModifiersState::CONTROL))), vec![
+            (id, WindowEvent::Focused(true)),
+            (id, WindowEvent::ModifiersChanged(ModifiersState::CONTROL.into())),
+        ]);
+    }
+
+    #[test]
+    fn popup_leave_clears_modifiers_then_focus() {
+        let id = PopupId(3);
+        assert_eq!(window_events(&popup_leave_events(id)), vec![
+            (id, WindowEvent::ModifiersChanged(ModifiersState::empty().into())),
+            (id, WindowEvent::Focused(false)),
+        ]);
     }
 }
