@@ -71,3 +71,22 @@ impl Dispatch<KoraHaloHeaderManagerV1, GlobalData, WinitState> for KoraHaloHeade
 }
 
 delegate_dispatch!(WinitState: [KoraHaloHeaderManagerV1: GlobalData] => KoraHaloHeaderManager);
+
+#[cfg(test)]
+mod tests {
+    use super::protocol::kora_halo_header_manager_v1::{REQ_SET_MODE_OPCODE, REQ_SET_MODE_SINCE};
+    use super::{KoraHaloHeaderManagerV1, Mode};
+    use sctk::reexports::client::Proxy;
+
+    // cosmic-comp's server reads these off the wire; a drifted XML would
+    // silently send the wrong request or mode.
+    #[test]
+    fn wire_contract_matches_the_compositor() {
+        let interface = KoraHaloHeaderManagerV1::interface();
+        assert_eq!(interface.name, "kora_halo_header_manager_v1");
+        assert_eq!(interface.version, 1);
+        assert_eq!((REQ_SET_MODE_OPCODE, REQ_SET_MODE_SINCE), (1, 1));
+        assert_eq!(u32::from(Mode::Reserved), 0);
+        assert_eq!(u32::from(Mode::Overlay), 1);
+    }
+}

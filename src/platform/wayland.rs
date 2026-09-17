@@ -433,6 +433,19 @@ pub trait WindowExtWayland {
     /// Stop receiving the special key.
     fn unregister_special_action(&self) -> bool;
 
+    /// Whether Kora's Halo header floats over this window's top edge, so the
+    /// window must keep its own controls clear of it.
+    ///
+    /// `true` only when the window was created with
+    /// [`WindowAttributesExtWayland::with_halo_header_overlay`] and the
+    /// compositor offers `kora_halo_header_manager_v1`. The answer is final at
+    /// creation: the protocol takes the mode only before the initial commit and
+    /// keeps it for the surface's lifetime, and window creation round-trips past
+    /// that commit, so a rejected request fails creation instead.
+    ///
+    /// Always `false` on X11.
+    fn is_halo_header_overlay(&self) -> bool;
+
     /// Start a Wayland drag-and-drop operation from this window.
     ///
     /// Creates a `wl_data_source`, offers the given MIME types, and calls
@@ -716,6 +729,16 @@ impl WindowExtWayland for Window {
     }
 
     #[inline]
+    fn is_halo_header_overlay(&self) -> bool {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.is_halo_header_overlay(),
+        }
+    }
+
+    #[inline]
     fn start_drag(
         &self,
         mime_types: Vec<String>,
@@ -823,7 +846,7 @@ pub trait WindowAttributesExtWayland {
     /// first row already sits clear of the Halo, so the pill can overlap the
     /// top edge. The mode is sent before the window's initial commit, which is
     /// the only time the protocol accepts it. No-op if the compositor lacks
-    /// the global.
+    /// the global; [`WindowExtWayland::is_halo_header_overlay`] tells which.
     fn with_halo_header_overlay(self, overlay: bool) -> Self;
 }
 
@@ -858,5 +881,21 @@ impl MonitorHandleExtWayland for MonitorHandle {
     #[inline]
     fn native_id(&self) -> u32 {
         self.inner.native_identifier()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WindowAttributesExtWayland;
+    use crate::window::WindowAttributes;
+
+    #[test]
+    fn halo_header_overlay_is_opt_in() {
+        let attributes = WindowAttributes::default();
+        assert!(!attributes.platform_specific.halo_header_overlay);
+        let attributes = attributes.with_halo_header_overlay(true);
+        assert!(attributes.platform_specific.halo_header_overlay);
+        let attributes = attributes.with_halo_header_overlay(false);
+        assert!(!attributes.platform_specific.halo_header_overlay);
     }
 }

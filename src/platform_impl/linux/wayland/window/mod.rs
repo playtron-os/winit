@@ -80,6 +80,9 @@ pub struct Window {
 
     /// The event sink to deliver synthetic events.
     window_events_sink: Arc<Mutex<EventSink>>,
+
+    /// Whether the Halo overlay mode was sent for this surface.
+    halo_header_overlay: bool,
 }
 
 impl Window {
@@ -202,15 +205,20 @@ impl Window {
         // Let the Halo float over the window's top edge, if asked. The
         // protocol only accepts the mode between the toplevel role and the
         // initial commit, so this is its one chance.
-        if attributes.platform_specific.halo_header_overlay {
-            match state.halo_header_manager.as_ref() {
-                Some(halo) => halo.set_overlay(&surface),
-                None => debug!(
-                    "kora_halo_header_manager_v1 unsupported by the compositor; keeping reserved \
-                     decoration space"
-                ),
-            }
-        }
+        let halo_header_overlay = attributes.platform_specific.halo_header_overlay
+            && match state.halo_header_manager.as_ref() {
+                Some(halo) => {
+                    halo.set_overlay(&surface);
+                    true
+                },
+                None => {
+                    debug!(
+                        "kora_halo_header_manager_v1 unsupported by the compositor; keeping \
+                         reserved decoration space"
+                    );
+                    false
+                },
+            };
 
         // XXX Do initial commit.
         window.commit();
@@ -263,6 +271,7 @@ impl Window {
             event_loop_awakener,
             window_requests,
             window_events_sink,
+            halo_header_overlay,
         })
     }
 
@@ -543,6 +552,12 @@ impl Window {
     #[inline]
     pub fn unregister_special_action(&self) -> bool {
         self.window_state.lock().unwrap().unregister_special_action()
+    }
+
+    /// Whether Kora's Halo header floats over this window's top edge.
+    #[inline]
+    pub fn is_halo_header_overlay(&self) -> bool {
+        self.halo_header_overlay
     }
 
     /// Embed a toplevel by process ID into this window's surface.
