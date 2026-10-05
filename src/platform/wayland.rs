@@ -845,8 +845,8 @@ pub trait WindowAttributesExtWayland {
     /// it reaches into the window.
     ///
     /// For a window laid out chromeless: its content is full-bleed and its
-    /// first row already sits clear of the strip. The mode is sent before the window's initial commit, which is
-    /// the only time the protocol accepts it. No-op if the compositor lacks
+    /// first row already sits clear of the strip. The mode is sent before the window's initial
+    /// commit, which is the only time the protocol accepts it. No-op if the compositor lacks
     /// the global; [`WindowExtWayland::is_halo_header_overlay`] tells which.
     fn with_halo_header_overlay(self, overlay: bool) -> Self;
 }

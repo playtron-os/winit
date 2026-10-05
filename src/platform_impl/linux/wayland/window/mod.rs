@@ -213,8 +213,8 @@ impl Window {
                 },
                 None => {
                     debug!(
-                        "kora_halo_header_manager_v1 unsupported by the compositor; no Halo \
-                         drag strip"
+                        "kora_halo_header_manager_v1 unsupported by the compositor; no Halo drag \
+                         strip"
                     );
                     false
                 },

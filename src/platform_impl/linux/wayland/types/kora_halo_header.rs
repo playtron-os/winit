@@ -47,8 +47,8 @@ impl KoraHaloHeaderManager {
         Ok(Self { manager })
     }
 
-    /// Give the Halo a drag strip over `surface`'s top edge. Must be sent after the surface has its `xdg_toplevel` role and
-    /// before its initial commit; later is a protocol error.
+    /// Give the Halo a drag strip over `surface`'s top edge. Must be sent after the surface has its
+    /// `xdg_toplevel` role and before its initial commit; later is a protocol error.
     pub fn set_overlay(&self, surface: &WlSurface) {
         self.manager.set_mode(surface, Mode::Overlay);
     }
