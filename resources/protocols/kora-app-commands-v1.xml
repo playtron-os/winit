@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="kora_app_commands_v1">
+  <copyright>
+    Copyright © 2026 Playtron
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="publish and invoke a window's application commands">
+    A running application publishes its own commands and recent items to the
+    shell. Invocation is delivered to the owning window, never interpreted as
+    a shell command or used to start a process. Each window registers separately
+    so its commands address that window's current document, tab, or focused pane.
+
+    This protocol does not reserve global shortcuts. Shortcut strings are
+    display hints for bindings implemented by the application or compositor.
+  </description>
+
+  <interface name="kora_app_commands_v1" version="1">
+    <description summary="register commands for an owned xdg_toplevel"/>
+
+    <enum name="error">
+      <entry name="already_registered" value="0" summary="this toplevel already has a registration"/>
+      <entry name="invalid_toplevel" value="1" summary="the toplevel is not owned by this client"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="release the manager without removing registrations"/>
+    </request>
+
+    <request name="get_commands">
+      <description summary="create a registration for this client's window">
+        At most one registration may exist for an xdg_toplevel. Registration
+        starts empty. It remains associated with the xdg_toplevel across unmap
+        and remap, but commands cannot be invoked while the window is unmapped.
+        Destroying the xdg_toplevel closes the registration. Other windows,
+        including windows of the same application, are unaffected.
+      </description>
+      <arg name="id" type="new_id" interface="kora_app_commands_handle_v1"/>
+      <arg name="toplevel" type="object" interface="xdg_toplevel"/>
+    </request>
+  </interface>
+
+  <interface name="kora_app_commands_handle_v1" version="1">
+    <description summary="an atomic command catalog for one window">
+      Catalog requests modify pending state. Done applies that state atomically;
+      until then the shell displays the last committed catalog. After done,
+      pending state starts as a copy of the committed state. Clear followed by
+      additions and done replaces the entire catalog without a visible empty
+      interval. Destroy removes both pending and committed state immediately.
+
+      Strings are UTF-8. IDs are 1 to 128 ASCII bytes using letters, digits,
+      dots, underscores and hyphens. Labels are 1 to 256 UTF-8 bytes; optional
+      shortcut, section, icon and sublabel strings may be empty and are at most
+      256 bytes. Invalid strings, unknown IDs and invalid flags are protocol
+      errors. A catalog contains at most 256 application commands.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_value" value="0" summary="a value violates the catalog contract"/>
+      <entry name="reserved_id" value="1" summary="an application command shadows a system command"/>
+      <entry name="unknown_id" value="2" summary="a state update names an undeclared command"/>
+      <entry name="too_many_commands" value="3" summary="the pending catalog exceeds 256 commands"/>
+    </enum>
+
+    <enum name="command_flags" bitfield="true">
+      <entry name="menu" value="1" summary="nominate this command for the compact app menu"/>
+      <entry name="stateful" value="2" summary="the command has an active state"/>
+      <entry name="bound" value="4" summary="the application implements the advertised shortcut"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="remove the registration and its catalog"/>
+    </request>
+
+    <request name="clear">
+      <description summary="empty the pending commands, handled verbs and recent items"/>
+    </request>
+
+    <request name="handle">
+      <description summary="handle a standard application or editing verb">
+        Allowed IDs are undo, redo, cut, copy, paste, selall, markv, settings,
+        neww, find and info. Their labels, groups and shortcut hints belong to
+        the shell. The application declares whether it can currently perform
+        the verb. Enabled is either zero or one. Repeated declarations replace
+        the previous declaration. Capture and window-management verbs cannot
+        be intercepted through this request.
+      </description>
+      <arg name="id" type="string"/>
+      <arg name="enabled" type="uint"/>
+    </request>
+
+    <request name="add_command">
+      <description summary="add or replace a named application command">
+        An application command ID must contain a dot, such as term.clear, and
+        cannot use a standard command ID. Replacing a command keeps its original
+        order, enables it and resets its active state to false. The shell offers
+        at most the first six menu nominees, in declaration order. Other commands
+        remain available in the palette. Icon is a symbolic icon name, never a
+        file path; an unsupported or empty name uses the generic command glyph.
+      </description>
+      <arg name="id" type="string"/>
+      <arg name="name" type="string"/>
+      <arg name="keys" type="string"/>
+      <arg name="section" type="string"/>
+      <arg name="icon" type="string"/>
+      <arg name="flags" type="uint" enum="command_flags"/>
+    </request>
+
+    <request name="set_state">
+      <description summary="set a stateful application's command state">
+        Active is zero or one. The command must already exist and have the
+        stateful flag. This affects presentation; it does not invoke the command.
+      </description>
+      <arg name="id" type="string"/>
+      <arg name="active" type="uint"/>
+    </request>
+
+    <request name="set_enabled">
+      <description summary="set an application's command availability">
+        Enabled is zero or one. The application command must already exist.
+        Disabled commands remain discoverable but cannot be invoked or pinned.
+      </description>
+      <arg name="id" type="string"/>
+      <arg name="enabled" type="uint"/>
+    </request>
+
+    <request name="add_recent">
+      <description summary="publish an opaque recent item">
+        ID is meaningful only to this registration; it is never resolved as a
+        file path or URI by the compositor. Repeated IDs replace previous items.
+        The timestamp is unsigned milliseconds since the Unix epoch, encoded
+        as (timestamp_hi shifted left by 32) plus timestamp_lo. The shell retains
+        at most the ten newest entries in both pending and committed state,
+        breaking ties by declaration order. Additional older items are discarded
+        immediately. Open Recent is displayed only when this set is nonempty.
+      </description>
+      <arg name="id" type="string"/>
+      <arg name="label" type="string"/>
+      <arg name="sublabel" type="string"/>
+      <arg name="timestamp_hi" type="uint"/>
+      <arg name="timestamp_lo" type="uint"/>
+    </request>
+
+    <request name="done">
+      <description summary="commit a complete catalog revision">
+        Generation identifies this catalog revision and is echoed with every
+        invocation. The client must choose a different generation for each
+        commit and ignore invocations from catalogs it no longer handles. The
+        compositor must discard a shell selection if the generation captured
+        when that menu or palette was built differs from the current catalog,
+        even if the selected ID still exists. It must also recheck command
+        presence and enabled state, or recent-item presence, before sending an
+        invocation. This applies to both invoke and recent_selected.
+      </description>
+      <arg name="generation" type="uint"/>
+    </request>
+
+    <request name="request_palette">
+      <description summary="open the shell palette for this focused window">
+        The compositor may honor this request only while this mapped toplevel
+        has keyboard focus on the given seat and serial names a recent input
+        event actually delivered to this client for that seat and window.
+        Stale or foreign serials and requests from background, hidden or parked
+        windows are ignored.
+      </description>
+      <arg name="seat" type="object" interface="wl_seat"/>
+      <arg name="serial" type="uint"/>
+    </request>
+
+    <event name="invoke">
+      <description summary="perform a command in this window">
+        ID names an enabled command or handled standard verb in the committed
+        generation. Serial identifies the triggering shell input, not a grant
+        of access to another window or workspace. The application performs the
+        action and publishes any resulting state through a later done.
+      </description>
+      <arg name="id" type="string"/>
+      <arg name="generation" type="uint"/>
+      <arg name="serial" type="uint"/>
+    </event>
+
+    <event name="recent_selected">
+      <description summary="open a recent item in this window">
+        The application resolves its own opaque ID and handles missing or stale
+        content. The compositor does not read the item or execute its ID.
+      </description>
+      <arg name="id" type="string"/>
+      <arg name="generation" type="uint"/>
+      <arg name="serial" type="uint"/>
+    </event>
+
+    <event name="closed">
+      <description summary="the toplevel no longer exists">
+        The registration is inert, its catalog has been removed, and no more
+        events follow. The client should destroy the handle. Requests other
+        than destroy are ignored after closed.
+      </description>
+    </event>
+  </interface>
+</protocol>

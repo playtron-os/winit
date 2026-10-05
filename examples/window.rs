@@ -478,6 +478,9 @@ impl ApplicationHandler<UserEvent> for Application {
             WindowEvent::IdentityChanged(identity) => {
                 info!("Window={window_id:?} identity changed: {identity:?}");
             },
+            WindowEvent::AppCommand(request) => {
+                info!("Window={window_id:?} app command: {request:?}");
+            },
             WindowEvent::TouchpadPressure { .. }
             | WindowEvent::HoveredFileCancelled
             | WindowEvent::KeyboardInput { .. }

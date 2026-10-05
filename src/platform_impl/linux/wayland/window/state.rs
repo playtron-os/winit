@@ -78,6 +78,11 @@ const MIN_WINDOW_SIZE: LogicalSize<u32> = LogicalSize::new(2, 1);
 /// The state of the window which is being updated from the [`WinitState`].
 pub struct WindowState {
     identity: Option<crate::platform_impl::wayland::types::kora_toplevel_identity::IdentityHandle>,
+    app_commands:
+        Option<crate::platform_impl::wayland::types::kora_app_commands::AppCommandsHandle>,
+    /// Seat and serial of the latest key press while focused, for requests that
+    /// must name the input that caused them.
+    last_key_press: Option<(WlSeat, u32)>,
     /// The connection to Wayland server.
     pub connection: Connection,
 
@@ -276,6 +281,11 @@ impl WindowState {
                 .identity_manager
                 .as_ref()
                 .map(|manager| manager.get_identity(window.xdg_toplevel(), queue_handle)),
+            app_commands: winit_state
+                .app_commands_manager
+                .as_ref()
+                .map(|manager| manager.get_commands(window.xdg_toplevel(), queue_handle)),
+            last_key_press: None,
             blur: None,
             blur_manager: winit_state.kwin_blur_manager.clone(),
             background_effect: None,
@@ -1500,6 +1510,39 @@ impl WindowState {
 
     pub fn take_identity_events(&mut self) -> Vec<Option<crate::window::Identity>> {
         self.identity.as_mut().map(|identity| identity.take_events()).unwrap_or_default()
+    }
+
+    pub fn set_app_commands(&mut self, commands: &crate::window::AppCommands) {
+        if let Some(handle) = self.app_commands.as_mut() {
+            handle.publish(commands);
+        }
+    }
+
+    pub fn note_key_press(&mut self, seat: WlSeat, serial: u32) {
+        self.last_key_press = Some((seat, serial));
+    }
+
+    /// Ask for the shell's palette with the latest key press, or else the latest click.
+    pub fn request_app_palette(&self) {
+        let Some(handle) = self.app_commands.as_ref() else {
+            return;
+        };
+        if let Some((seat, serial)) = &self.last_key_press {
+            handle.request_palette(seat, *serial);
+            return;
+        }
+        let mut sent = false;
+        self.apply_on_pointer(|_, data| {
+            let serial = data.latest_button_serial();
+            if serial != 0 && !sent {
+                handle.request_palette(data.seat(), serial);
+                sent = true;
+            }
+        });
+    }
+
+    pub fn take_app_command_events(&mut self) -> Vec<crate::window::AppCommandRequest> {
+        self.app_commands.as_mut().map(|handle| handle.take_events()).unwrap_or_default()
     }
 
     /// Embed a toplevel by process ID into this window's surface.

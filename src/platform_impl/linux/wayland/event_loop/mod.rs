@@ -534,6 +534,9 @@ impl<T: 'static> EventLoop<T> {
                     buffer_sink
                         .push_window_event(WindowEvent::IdentityChanged(identity), window_id);
                 }
+                for request in window.take_app_command_events() {
+                    buffer_sink.push_window_event(WindowEvent::AppCommand(request), window_id);
+                }
             }
         });
 

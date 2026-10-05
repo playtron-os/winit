@@ -37,6 +37,7 @@ use crate::platform_impl::wayland::types::cosmic_corner_radius::CosmicCornerRadi
 use crate::platform_impl::wayland::types::cosmic_special_action::CosmicSpecialActionManager;
 use crate::platform_impl::wayland::types::cosmic_surface_embed::CosmicSurfaceEmbedManager;
 use crate::platform_impl::wayland::types::cosmic_tooltip::CosmicTooltipManager;
+use crate::platform_impl::wayland::types::kora_app_commands::AppCommandsManager;
 use crate::platform_impl::wayland::types::kora_halo_header::KoraHaloHeaderManager;
 use crate::platform_impl::wayland::types::kora_toplevel_identity::IdentityManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
@@ -170,6 +171,9 @@ pub struct WinitState {
     /// Authenticated mapped-window identity lookup.
     pub identity_manager: Option<IdentityManager>,
 
+    /// Publishes windows' commands to the shell.
+    pub app_commands_manager: Option<AppCommandsManager>,
+
     /// Wayland DnD (drag-and-drop) manager.
     pub dnd_manager: Option<WaylandDndManager>,
 
@@ -269,6 +273,7 @@ impl WinitState {
             tooltip_manager: CosmicTooltipManager::new(globals, queue_handle).ok(),
             halo_header_manager: KoraHaloHeaderManager::new(globals, queue_handle).ok(),
             identity_manager: IdentityManager::new(globals, queue_handle).ok(),
+            app_commands_manager: AppCommandsManager::new(globals, queue_handle).ok(),
 
             dnd_manager: WaylandDndManager::new(globals, queue_handle).ok(),
             dnd_data_devices: Vec::new(),
