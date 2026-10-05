@@ -103,7 +103,11 @@ jobs:
 
     - uses: dtolnay/rust-toolchain@stable
     - name: Generate MSRV-compatible lockfile
-      run: cargo generate-lockfile --config 'resolver.incompatible-rust-versions="fallback"'
+      run: |
+           cargo generate-lockfile --config 'resolver.incompatible-rust-versions="fallback"'
+           # Newer releases that do not build on 1.70 although their metadata allows it.
+           cargo update -p foreign-types-macros --precise 0.2.3
+           cargo update -p orbclient --precise 0.3.47
 
     - name: Install GCC Multilib
       if: (matrix.platform.os == 'ubuntu-latest') && contains(matrix.platform.target, 'i686')
