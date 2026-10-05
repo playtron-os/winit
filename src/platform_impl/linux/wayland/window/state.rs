@@ -77,6 +77,7 @@ const MIN_WINDOW_SIZE: LogicalSize<u32> = LogicalSize::new(2, 1);
 
 /// The state of the window which is being updated from the [`WinitState`].
 pub struct WindowState {
+    identity: Option<crate::platform_impl::wayland::types::kora_toplevel_identity::IdentityHandle>,
     /// The connection to Wayland server.
     pub connection: Connection,
 
@@ -271,6 +272,10 @@ impl WindowState {
             .map(|fsm| fsm.fractional_scaling(window.wl_surface(), queue_handle));
 
         Self {
+            identity: winit_state
+                .identity_manager
+                .as_ref()
+                .map(|manager| manager.get_identity(window.xdg_toplevel(), queue_handle)),
             blur: None,
             blur_manager: winit_state.kwin_blur_manager.clone(),
             background_effect: None,
@@ -1487,6 +1492,14 @@ impl WindowState {
             .as_ref()
             .map(SpecialActionReceiver::take_events)
             .unwrap_or_default()
+    }
+
+    pub fn kora_identity(&self) -> Option<crate::window::Identity> {
+        self.identity.as_ref().and_then(|identity| identity.current())
+    }
+
+    pub fn take_identity_events(&mut self) -> Vec<Option<crate::window::Identity>> {
+        self.identity.as_mut().map(|identity| identity.take_events()).unwrap_or_default()
     }
 
     /// Embed a toplevel by process ID into this window's surface.

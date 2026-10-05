@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="kora_toplevel_identity_v1">
+  <copyright>
+    Copyright © 2026 Playtron
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="identify a mapped toplevel and its workspace">
+    This protocol associates a toplevel with its ext-foreign-toplevel-list
+    identifier and its compositor-authenticated Kora workspace. The workspace
+    is a process context, not a virtual desktop or the workspace on screen.
+
+    A pair is stable while its toplevel remains mapped, including compositor
+    visibility withdrawal and workspace parking. A true client unmap ends
+    that identity; a later map receives a new identifier, as required by
+    ext-foreign-toplevel-list. Clients must not use an identifier as authority.
+  </description>
+
+  <interface name="kora_toplevel_identity_v1" version="1">
+    <description summary="look up an owned or already-visible toplevel">
+      Applications can identify their own xdg_toplevel. A client with an
+      ext_foreign_toplevel_handle_v1 can identify that toplevel only while
+      its handle is live and the compositor permits that client to see it.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="release the global object">
+        Existing identity handles remain valid until destroyed or closed.
+      </description>
+    </request>
+
+    <request name="get_identity">
+      <description summary="identify this client's toplevel">
+        The xdg_toplevel must belong to the requesting client. The result is
+        delayed until the toplevel maps. If it is destroyed or the compositor
+        cannot identify it, the handle is closed without an identity pair.
+      </description>
+      <arg name="id" type="new_id" interface="kora_toplevel_identity_handle_v1"/>
+      <arg name="toplevel" type="object" interface="xdg_toplevel"/>
+    </request>
+
+    <request name="get_foreign_identity">
+      <description summary="identify an already-advertised toplevel">
+        The foreign handle must belong to this client, remain open, and name
+        a toplevel the client is currently allowed to see. A closed or
+        inaccessible handle produces only closed, never identity data.
+        Re-advertising the same mapped toplevel does not revive an old handle.
+      </description>
+      <arg name="id" type="new_id" interface="kora_toplevel_identity_handle_v1"/>
+      <arg name="toplevel" type="object" interface="ext_foreign_toplevel_handle_v1"/>
+    </request>
+  </interface>
+
+  <interface name="kora_toplevel_identity_handle_v1" version="1">
+    <description summary="one atomic identity for one mapped lifetime">
+      Identifier and workspace events are pending data until done. Each
+      handle produces at most one pair. Closed revokes the pair and makes
+      the object inert; the client should destroy it. To identify a later
+      mapping, request a new handle after closed.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop waiting for or retaining this identity"/>
+    </request>
+
+    <event name="identifier">
+      <description summary="the mapped toplevel's shared identifier">
+        This is the identifier published on ext-foreign-toplevel-list for
+        the same mapped toplevel: 1 to 32 printable ASCII bytes.
+      </description>
+      <arg name="identifier" type="string"/>
+    </event>
+
+    <event name="workspace">
+      <description summary="the compositor-authenticated process workspace">
+        The workspace comes from the window owner's authenticated process
+        context. An empty string means the machine plane. A missing event
+        means unknown and must never be interpreted as the machine plane.
+      </description>
+      <arg name="workspace" type="string"/>
+    </event>
+
+    <event name="done">
+      <description summary="apply the identifier and workspace together">
+        Exactly one identifier and one workspace precede done. The client
+        must apply the pair atomically and discard pending data on closed.
+      </description>
+    </event>
+
+    <event name="closed">
+      <description summary="the identity is no longer available">
+        No more events follow. An owned identity closes on actual unmap or
+        destruction. A foreign identity also closes when its foreign handle
+        closes or the toplevel stops being visible to the requesting client.
+        The client must clear any attribution obtained from this handle.
+      </description>
+    </event>
+  </interface>
+</protocol>

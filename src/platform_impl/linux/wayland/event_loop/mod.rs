@@ -526,8 +526,13 @@ impl<T: 'static> EventLoop<T> {
         // Drain resolved special-key gestures and dispatch them per window.
         self.with_state(|state| {
             for (&window_id, window) in state.windows.get_mut().iter_mut() {
-                for event in window.lock().unwrap().take_special_action_events() {
+                let mut window = window.lock().unwrap();
+                for event in window.take_special_action_events() {
                     buffer_sink.push_window_event(WindowEvent::SpecialAction(event), window_id);
+                }
+                for identity in window.take_identity_events() {
+                    buffer_sink
+                        .push_window_event(WindowEvent::IdentityChanged(identity), window_id);
                 }
             }
         });
@@ -535,7 +540,7 @@ impl<T: 'static> EventLoop<T> {
         // Drain pending DnD data and dispatch as DataReceived events
         self.with_state(|state| {
             let mut guard = state.dnd_session.shared_offer.lock().unwrap();
-            let pending: Vec<_> = guard.pending_data.drain(..).collect();
+            let pending = std::mem::take(&mut guard.pending_data);
             drop(guard);
 
             if !pending.is_empty() {

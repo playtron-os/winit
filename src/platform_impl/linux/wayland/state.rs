@@ -38,6 +38,7 @@ use crate::platform_impl::wayland::types::cosmic_special_action::CosmicSpecialAc
 use crate::platform_impl::wayland::types::cosmic_surface_embed::CosmicSurfaceEmbedManager;
 use crate::platform_impl::wayland::types::cosmic_tooltip::CosmicTooltipManager;
 use crate::platform_impl::wayland::types::kora_halo_header::KoraHaloHeaderManager;
+use crate::platform_impl::wayland::types::kora_toplevel_identity::IdentityManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::layer_shadow::LayerShadowManager;
 use crate::platform_impl::wayland::types::wayland_dnd::{DndSessionState, WaylandDndManager};
@@ -166,6 +167,9 @@ pub struct WinitState {
     /// window's top edge.
     pub halo_header_manager: Option<KoraHaloHeaderManager>,
 
+    /// Authenticated mapped-window identity lookup.
+    pub identity_manager: Option<IdentityManager>,
+
     /// Wayland DnD (drag-and-drop) manager.
     pub dnd_manager: Option<WaylandDndManager>,
 
@@ -264,6 +268,7 @@ impl WinitState {
             xdg_foreign: XdgForeign::new(globals, queue_handle).ok(),
             tooltip_manager: CosmicTooltipManager::new(globals, queue_handle).ok(),
             halo_header_manager: KoraHaloHeaderManager::new(globals, queue_handle).ok(),
+            identity_manager: IdentityManager::new(globals, queue_handle).ok(),
 
             dnd_manager: WaylandDndManager::new(globals, queue_handle).ok(),
             dnd_data_devices: Vec::new(),

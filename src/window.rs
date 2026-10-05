@@ -14,6 +14,18 @@ pub use cursor_icon::{CursorIcon, ParseError as CursorIconParseError};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+/// A compositor-authenticated identity for one mapped window lifetime.
+///
+/// This is available on Kora Wayland compositors. Visibility changes preserve it;
+/// a true client unmap revokes it and a later mapping receives a new identifier.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Identity {
+    /// The identifier shared with ext-foreign-toplevel-list.
+    pub identifier: String,
+    /// The authenticated process workspace. Empty means the machine plane.
+    pub workspace: String,
+}
+
 /// Represents a window.
 ///
 /// The window is closed when dropped.

@@ -447,6 +447,13 @@ pub trait WindowExtWayland {
     /// Always `false` on X11.
     fn is_halo_header_overlay(&self) -> bool;
 
+    /// The complete compositor-authenticated identity for this mapped window.
+    ///
+    /// Returns `None` before the identity arrives, after revocation, on X11, or
+    /// when the compositor lacks `kora_toplevel_identity_v1`. Changes are also
+    /// delivered through [`crate::event::WindowEvent::IdentityChanged`].
+    fn kora_identity(&self) -> Option<crate::window::Identity>;
+
     /// Start a Wayland drag-and-drop operation from this window.
     ///
     /// Creates a `wl_data_source`, offers the given MIME types, and calls
@@ -736,6 +743,16 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.is_halo_header_overlay(),
+        }
+    }
+
+    #[inline]
+    fn kora_identity(&self) -> Option<crate::window::Identity> {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => None,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.kora_identity(),
         }
     }
 

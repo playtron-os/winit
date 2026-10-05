@@ -535,6 +535,12 @@ pub enum WindowEvent {
     /// - **Other platforms:** Unsupported.
     SpecialAction(SpecialActionEvent),
 
+    /// The compositor-authenticated window identity changed or was revoked.
+    ///
+    /// `None` revokes any previously reported pair. Only Kora Wayland compositors
+    /// implementing `kora_toplevel_identity_v1` produce this event.
+    IdentityChanged(Option<crate::window::Identity>),
+
     /// Drag-and-drop event from the Wayland compositor.
     ///
     /// This event is sent when the `wl_data_device` protocol delivers DnD events
