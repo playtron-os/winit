@@ -7,9 +7,8 @@ use sctk::reexports::client::globals::{BindError, GlobalList};
 use sctk::reexports::client::protocol::wl_shm;
 use sctk::reexports::client::{delegate_dispatch, Connection, Dispatch, Proxy, QueueHandle};
 use sctk::reexports::protocols::xdg::shell::client::xdg_toplevel::XdgToplevel;
-use sctk::reexports::protocols::xdg::toplevel_icon::v1::client::{
-    xdg_toplevel_icon_manager_v1::XdgToplevelIconManagerV1, xdg_toplevel_icon_v1::XdgToplevelIconV1,
-};
+use sctk::reexports::protocols::xdg::toplevel_icon::v1::client::xdg_toplevel_icon_manager_v1::XdgToplevelIconManagerV1;
+use sctk::reexports::protocols::xdg::toplevel_icon::v1::client::xdg_toplevel_icon_v1::XdgToplevelIconV1;
 use sctk::shm::slot::{Buffer, SlotPool};
 use sctk::shm::Shm;
 use tracing::warn;

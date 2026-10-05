@@ -250,7 +250,7 @@ pub trait WindowExtWayland {
     ///
     /// # Arguments
     /// * `width` - Target width in logical pixels
-    /// * `height` - Target height in logical pixels  
+    /// * `height` - Target height in logical pixels
     /// * `duration_ms` - Animation duration in milliseconds
     fn request_animated_resize(&self, width: i32, height: i32, duration_ms: u32) -> bool;
 
@@ -364,9 +364,10 @@ pub trait WindowExtWayland {
     ///
     /// # Arguments
     /// * `embed_id` - The ID returned from `embed_toplevel_by_pid`
-    /// * `anchor` - Bitflags indicating which edges to anchor to (0=none, 1=top, 2=bottom, 4=left, 8=right)
+    /// * `anchor` - Bitflags indicating which edges to anchor to (0=none, 1=top, 2=bottom, 4=left,
+    ///   8=right)
     /// * `margin_top` - Margin from top edge
-    /// * `margin_right` - Margin from right edge  
+    /// * `margin_right` - Margin from right edge
     /// * `margin_bottom` - Margin from bottom edge
     /// * `margin_left` - Margin from left edge
     /// * `width` - Width of embed region (0 to stretch between left/right anchors)
@@ -500,8 +501,8 @@ pub trait WindowExtWayland {
     /// `DndWindowEvent::DataReceived` event.
     ///
     /// # Arguments
-    /// * `mime_type` - The MIME type to request (must be one of the types
-    ///   offered in the `DndWindowEvent::Enter` event).
+    /// * `mime_type` - The MIME type to request (must be one of the types offered in the
+    ///   `DndWindowEvent::Enter` event).
     fn dnd_request_data(&self, mime_type: &str);
 
     /// Inhibit (or release) the compositor's global keyboard shortcuts for this

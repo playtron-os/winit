@@ -421,7 +421,8 @@ impl WindowState {
         let stateless = Self::is_stateless(&configure);
 
         tracing::trace!(
-            "configure: stateless={}, configure.new_size={:?}, current_size={:?}, stateless_size={:?}",
+            "configure: stateless={}, configure.new_size={:?}, current_size={:?}, \
+             stateless_size={:?}",
             stateless,
             configure.new_size,
             self.size,
@@ -805,7 +806,8 @@ impl WindowState {
         let is_stateless = self.last_configure.as_ref().map(Self::is_stateless).unwrap_or(true);
 
         tracing::trace!(
-            "request_inner_size: inner_size={:?}, logical_size={:?}, is_stateless={}, current_stateless_size={:?}",
+            "request_inner_size: inner_size={:?}, logical_size={:?}, is_stateless={}, \
+             current_stateless_size={:?}",
             inner_size,
             logical_size,
             is_stateless,
@@ -820,7 +822,8 @@ impl WindowState {
             // Window is maximized/fullscreen/tiled - store as the restore size
             // so when unmaximized it will restore to this size
             tracing::trace!(
-                "request_inner_size: window is NOT stateless (maximized/tiled), storing {:?} as stateless_size for restore",
+                "request_inner_size: window is NOT stateless (maximized/tiled), storing {:?} as \
+                 stateless_size for restore",
                 logical_size
             );
             self.stateless_size = logical_size;
@@ -1586,7 +1589,8 @@ impl WindowState {
     ///
     /// # Arguments
     /// * `embed_id` - The embedded surface ID
-    /// * `anchor` - Bitflags indicating which edges to anchor to (0=none, 1=top, 2=bottom, 4=left, 8=right)
+    /// * `anchor` - Bitflags indicating which edges to anchor to (0=none, 1=top, 2=bottom, 4=left,
+    ///   8=right)
     /// * `margin_top` - Margin from top edge
     /// * `margin_right` - Margin from right edge
     /// * `margin_bottom` - Margin from bottom edge

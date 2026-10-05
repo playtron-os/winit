@@ -631,7 +631,8 @@ impl PopupHandler for WinitState {
                 .unwrap_or((config.width as u32, config.height as u32));
 
             tracing::debug!(
-                "Popup {:?} configured by compositor: position=({}, {}), geometry={}x{}, surface={}x{}",
+                "Popup {:?} configured by compositor: position=({}, {}), geometry={}x{}, \
+                 surface={}x{}",
                 id,
                 config.position.0,
                 config.position.1,

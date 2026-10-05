@@ -287,14 +287,10 @@ impl<T: 'static> EventLoop<T> {
             // once we have a protocol error, we could get stuck retrying...
             if let Err(err) = self.connection.flush() {
                 use sctk::reexports::client::backend::WaylandError as BackendError;
-                tracing::error!(
-                    "Wayland flush error: {:?} (kind={:?})",
-                    err,
-                    match &err {
-                        BackendError::Io(e) => Some(e.kind()),
-                        _ => None,
-                    }
-                );
+                tracing::error!("Wayland flush error: {:?} (kind={:?})", err, match &err {
+                    BackendError::Io(e) => Some(e.kind()),
+                    _ => None,
+                });
                 match err {
                     // BrokenPipe (EPIPE) can occur transiently during rapid
                     // window state transitions (e.g. maximize/unmaximize).
@@ -408,7 +404,8 @@ impl<T: 'static> EventLoop<T> {
             if let Some(configure) = compositor_update.pending_configure.take() {
                 let window_id = compositor_update.window_id;
                 tracing::debug!(
-                    "single_iteration: applying deferred configure for window={:?} size=({:?},{:?}) state={:?}",
+                    "single_iteration: applying deferred configure for window={:?} \
+                     size=({:?},{:?}) state={:?}",
                     window_id,
                     configure.new_size.0.map(|v| v.get()),
                     configure.new_size.1.map(|v| v.get()),
@@ -915,13 +912,20 @@ impl ActiveEventLoop {
         };
 
         tracing::debug!(
-            "create_popup: parent_popup={:?}, parent_scale_factor={}, size=({}, {}), anchor_rect=({}, {}, {}, {}), offset=({}, {}), anchor={:?}, gravity={:?}",
+            "create_popup: parent_popup={:?}, parent_scale_factor={}, size=({}, {}), \
+             anchor_rect=({}, {}, {}, {}), offset=({}, {}), anchor={:?}, gravity={:?}",
             parent_popup,
             parent_scale_factor,
-            settings.size.0, settings.size.1,
-            settings.anchor_rect.0, settings.anchor_rect.1, settings.anchor_rect.2, settings.anchor_rect.3,
-            settings.offset.0, settings.offset.1,
-            settings.anchor, settings.gravity
+            settings.size.0,
+            settings.size.1,
+            settings.anchor_rect.0,
+            settings.anchor_rect.1,
+            settings.anchor_rect.2,
+            settings.anchor_rect.3,
+            settings.offset.0,
+            settings.offset.1,
+            settings.anchor,
+            settings.gravity
         );
 
         // Create a new surface for the popup
@@ -1146,8 +1150,8 @@ impl ActiveEventLoop {
                 popup_state.tooltip = Some(tooltip_handle);
             } else {
                 tracing::warn!(
-                    "create_popup: tooltip_offset set but tooltip_manager is None! \
-                     Protocol zcosmic_tooltip_manager_v1 may not be advertised by compositor."
+                    "create_popup: tooltip_offset set but tooltip_manager is None! Protocol \
+                     zcosmic_tooltip_manager_v1 may not be advertised by compositor."
                 );
             }
         }
