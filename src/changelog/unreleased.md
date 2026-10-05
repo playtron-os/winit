@@ -44,6 +44,9 @@ changelog entry.
 
 - On Wayland, add `WindowExtWayland::kora_identity()` and `WindowEvent::IdentityChanged`
   for compositor-authenticated Kora window identifiers and process workspaces.
+- On Wayland, add `WindowExtWayland::set_app_commands()`, `request_app_palette()` and
+  `WindowEvent::AppCommand`, so a window publishes its commands and recent items to
+  Kora's Halo (`kora_app_commands_v1`) and runs the ones picked there.
 
 ### Fixed
 

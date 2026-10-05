@@ -565,6 +565,18 @@ impl Window {
         self.window_state.lock().unwrap().kora_identity()
     }
 
+    #[inline]
+    pub fn set_app_commands(&self, commands: &crate::window::AppCommands) {
+        self.window_state.lock().unwrap().set_app_commands(commands);
+        self.event_loop_awakener.ping();
+    }
+
+    #[inline]
+    pub fn request_app_palette(&self) {
+        self.window_state.lock().unwrap().request_app_palette();
+        self.event_loop_awakener.ping();
+    }
+
     /// Embed a toplevel by process ID into this window's surface.
     ///
     /// Returns an embed ID that can be used to update geometry or remove the embed,

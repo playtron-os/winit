@@ -8,6 +8,7 @@ pub mod cosmic_special_action;
 pub mod cosmic_surface_embed;
 pub mod cosmic_tooltip;
 pub mod cursor;
+pub mod kora_app_commands;
 pub mod kora_halo_header;
 pub mod kora_toplevel_identity;
 pub mod kwin_blur;

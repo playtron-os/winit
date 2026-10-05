@@ -454,6 +454,19 @@ pub trait WindowExtWayland {
     /// delivered through [`crate::event::WindowEvent::IdentityChanged`].
     fn kora_identity(&self) -> Option<crate::window::Identity>;
 
+    /// Publish this window's commands and recent items to the shell, replacing
+    /// what it published before.
+    ///
+    /// The shell lists them in its own menus and sends back
+    /// [`crate::event::WindowEvent::AppCommand`] when one is picked. A no-op on X11
+    /// and on compositors without `kora_app_commands_v1`.
+    fn set_app_commands(&self, commands: &crate::window::AppCommands);
+
+    /// Ask the shell to open its command palette for this window, as if from the
+    /// latest key press it received. The shell ignores it unless this window has
+    /// keyboard focus.
+    fn request_app_palette(&self);
+
     /// Start a Wayland drag-and-drop operation from this window.
     ///
     /// Creates a `wl_data_source`, offers the given MIME types, and calls
@@ -753,6 +766,28 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => None,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.kora_identity(),
+        }
+    }
+
+    #[inline]
+    fn set_app_commands(&self, commands: &crate::window::AppCommands) {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => {
+                let _ = commands;
+            },
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.set_app_commands(commands),
+        }
+    }
+
+    #[inline]
+    fn request_app_palette(&self) {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => (),
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.request_app_palette(),
         }
     }
 
