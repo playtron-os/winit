@@ -202,7 +202,7 @@ impl Window {
             }
         }
 
-        // Let the Halo float over the window's top edge, if asked. The
+        // Give the Halo a drag strip over the window's top edge, if asked. The
         // protocol only accepts the mode between the toplevel role and the
         // initial commit, so this is its one chance.
         let halo_header_overlay = attributes.platform_specific.halo_header_overlay
@@ -213,8 +213,8 @@ impl Window {
                 },
                 None => {
                     debug!(
-                        "kora_halo_header_manager_v1 unsupported by the compositor; keeping \
-                         reserved decoration space"
+                        "kora_halo_header_manager_v1 unsupported by the compositor; no Halo \
+                         drag strip"
                     );
                     false
                 },
@@ -554,7 +554,7 @@ impl Window {
         self.window_state.lock().unwrap().unregister_special_action()
     }
 
-    /// Whether Kora's Halo header floats over this window's top edge.
+    /// Whether Kora's Halo has a drag strip over this window's top edge.
     #[inline]
     pub fn is_halo_header_overlay(&self) -> bool {
         self.halo_header_overlay
