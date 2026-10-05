@@ -15,10 +15,10 @@ use sctk::globals::GlobalData;
 use sctk::reexports::client::globals::{BindError, GlobalList};
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
 use sctk::reexports::client::{delegate_dispatch, Connection, Dispatch, Proxy, QueueHandle};
-use sctk::reexports::protocols::xdg::foreign::zv2::client::{
-    zxdg_imported_v2::{self, ZxdgImportedV2},
-    zxdg_importer_v2::ZxdgImporterV2,
+use sctk::reexports::protocols::xdg::foreign::zv2::client::zxdg_imported_v2::{
+    self, ZxdgImportedV2,
 };
+use sctk::reexports::protocols::xdg::foreign::zv2::client::zxdg_importer_v2::ZxdgImporterV2;
 use tracing::warn;
 
 use crate::platform_impl::wayland::state::WinitState;

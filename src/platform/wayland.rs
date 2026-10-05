@@ -250,7 +250,7 @@ pub trait WindowExtWayland {
     ///
     /// # Arguments
     /// * `width` - Target width in logical pixels
-    /// * `height` - Target height in logical pixels  
+    /// * `height` - Target height in logical pixels
     /// * `duration_ms` - Animation duration in milliseconds
     fn request_animated_resize(&self, width: i32, height: i32, duration_ms: u32) -> bool;
 
@@ -364,9 +364,10 @@ pub trait WindowExtWayland {
     ///
     /// # Arguments
     /// * `embed_id` - The ID returned from `embed_toplevel_by_pid`
-    /// * `anchor` - Bitflags indicating which edges to anchor to (0=none, 1=top, 2=bottom, 4=left, 8=right)
+    /// * `anchor` - Bitflags indicating which edges to anchor to (0=none, 1=top, 2=bottom, 4=left,
+    ///   8=right)
     /// * `margin_top` - Margin from top edge
-    /// * `margin_right` - Margin from right edge  
+    /// * `margin_right` - Margin from right edge
     /// * `margin_bottom` - Margin from bottom edge
     /// * `margin_left` - Margin from left edge
     /// * `width` - Width of embed region (0 to stretch between left/right anchors)
@@ -446,6 +447,13 @@ pub trait WindowExtWayland {
     /// Always `false` on X11.
     fn is_halo_header_overlay(&self) -> bool;
 
+    /// The complete compositor-authenticated identity for this mapped window.
+    ///
+    /// Returns `None` before the identity arrives, after revocation, on X11, or
+    /// when the compositor lacks `kora_toplevel_identity_v1`. Changes are also
+    /// delivered through [`crate::event::WindowEvent::IdentityChanged`].
+    fn kora_identity(&self) -> Option<crate::window::Identity>;
+
     /// Start a Wayland drag-and-drop operation from this window.
     ///
     /// Creates a `wl_data_source`, offers the given MIME types, and calls
@@ -500,8 +508,8 @@ pub trait WindowExtWayland {
     /// `DndWindowEvent::DataReceived` event.
     ///
     /// # Arguments
-    /// * `mime_type` - The MIME type to request (must be one of the types
-    ///   offered in the `DndWindowEvent::Enter` event).
+    /// * `mime_type` - The MIME type to request (must be one of the types offered in the
+    ///   `DndWindowEvent::Enter` event).
     fn dnd_request_data(&self, mime_type: &str);
 
     /// Inhibit (or release) the compositor's global keyboard shortcuts for this
@@ -735,6 +743,16 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => false,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.is_halo_header_overlay(),
+        }
+    }
+
+    #[inline]
+    fn kora_identity(&self) -> Option<crate::window::Identity> {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => None,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => window.kora_identity(),
         }
     }
 

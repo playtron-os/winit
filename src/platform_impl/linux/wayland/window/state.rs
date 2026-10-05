@@ -77,6 +77,7 @@ const MIN_WINDOW_SIZE: LogicalSize<u32> = LogicalSize::new(2, 1);
 
 /// The state of the window which is being updated from the [`WinitState`].
 pub struct WindowState {
+    identity: Option<crate::platform_impl::wayland::types::kora_toplevel_identity::IdentityHandle>,
     /// The connection to Wayland server.
     pub connection: Connection,
 
@@ -271,6 +272,10 @@ impl WindowState {
             .map(|fsm| fsm.fractional_scaling(window.wl_surface(), queue_handle));
 
         Self {
+            identity: winit_state
+                .identity_manager
+                .as_ref()
+                .map(|manager| manager.get_identity(window.xdg_toplevel(), queue_handle)),
             blur: None,
             blur_manager: winit_state.kwin_blur_manager.clone(),
             background_effect: None,
@@ -421,7 +426,8 @@ impl WindowState {
         let stateless = Self::is_stateless(&configure);
 
         tracing::trace!(
-            "configure: stateless={}, configure.new_size={:?}, current_size={:?}, stateless_size={:?}",
+            "configure: stateless={}, configure.new_size={:?}, current_size={:?}, \
+             stateless_size={:?}",
             stateless,
             configure.new_size,
             self.size,
@@ -805,7 +811,8 @@ impl WindowState {
         let is_stateless = self.last_configure.as_ref().map(Self::is_stateless).unwrap_or(true);
 
         tracing::trace!(
-            "request_inner_size: inner_size={:?}, logical_size={:?}, is_stateless={}, current_stateless_size={:?}",
+            "request_inner_size: inner_size={:?}, logical_size={:?}, is_stateless={}, \
+             current_stateless_size={:?}",
             inner_size,
             logical_size,
             is_stateless,
@@ -820,7 +827,8 @@ impl WindowState {
             // Window is maximized/fullscreen/tiled - store as the restore size
             // so when unmaximized it will restore to this size
             tracing::trace!(
-                "request_inner_size: window is NOT stateless (maximized/tiled), storing {:?} as stateless_size for restore",
+                "request_inner_size: window is NOT stateless (maximized/tiled), storing {:?} as \
+                 stateless_size for restore",
                 logical_size
             );
             self.stateless_size = logical_size;
@@ -1486,6 +1494,14 @@ impl WindowState {
             .unwrap_or_default()
     }
 
+    pub fn kora_identity(&self) -> Option<crate::window::Identity> {
+        self.identity.as_ref().and_then(|identity| identity.current())
+    }
+
+    pub fn take_identity_events(&mut self) -> Vec<Option<crate::window::Identity>> {
+        self.identity.as_mut().map(|identity| identity.take_events()).unwrap_or_default()
+    }
+
     /// Embed a toplevel by process ID into this window's surface.
     ///
     /// This requests the compositor to embed the window created by the specified
@@ -1586,7 +1602,8 @@ impl WindowState {
     ///
     /// # Arguments
     /// * `embed_id` - The embedded surface ID
-    /// * `anchor` - Bitflags indicating which edges to anchor to (0=none, 1=top, 2=bottom, 4=left, 8=right)
+    /// * `anchor` - Bitflags indicating which edges to anchor to (0=none, 1=top, 2=bottom, 4=left,
+    ///   8=right)
     /// * `margin_top` - Margin from top edge
     /// * `margin_right` - Margin from right edge
     /// * `margin_bottom` - Margin from bottom edge

@@ -560,6 +560,11 @@ impl Window {
         self.halo_header_overlay
     }
 
+    #[inline]
+    pub fn kora_identity(&self) -> Option<crate::window::Identity> {
+        self.window_state.lock().unwrap().kora_identity()
+    }
+
     /// Embed a toplevel by process ID into this window's surface.
     ///
     /// Returns an embed ID that can be used to update geometry or remove the embed,

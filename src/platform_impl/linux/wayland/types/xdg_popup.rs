@@ -469,9 +469,8 @@ mod tests {
         assert_eq!(subtree_leaf_first(links, PopupId(1)), ids(&[2, 1]));
     }
 
-    /// The compositor dismisses submenu 2, and what the app does with its `Done` is close menu
-    /// 1. Destroying 1 has to leave 2 where it is: 2 is one take into its grace window, and the
-    /// app may still be presenting to the surface dropping it would destroy.
+    /// Handling submenu 2's `Done` closes parent menu 1. Parent destruction must preserve
+    /// the submenu's grace window because the app may still be presenting to its surface.
     #[test]
     fn destroying_an_ancestor_keeps_a_dismissed_child_its_grace_window() {
         let mut dismissed =

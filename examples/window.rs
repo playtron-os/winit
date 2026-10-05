@@ -475,6 +475,9 @@ impl ApplicationHandler<UserEvent> for Application {
             WindowEvent::DoubleTapGesture { .. } => {
                 info!("Smart zoom");
             },
+            WindowEvent::IdentityChanged(identity) => {
+                info!("Window={window_id:?} identity changed: {identity:?}");
+            },
             WindowEvent::TouchpadPressure { .. }
             | WindowEvent::HoveredFileCancelled
             | WindowEvent::KeyboardInput { .. }

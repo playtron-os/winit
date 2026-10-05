@@ -199,7 +199,7 @@ impl EmbeddedSurface {
     /// * `anchor` - Bitflags indicating which edges to anchor to (see `set_anchor` protocol docs)
     ///   - 0: none (use absolute positioning)
     ///   - 1: top
-    ///   - 2: bottom  
+    ///   - 2: bottom
     ///   - 4: left
     ///   - 8: right
     ///   - Combinations like 9 (top | right) are valid

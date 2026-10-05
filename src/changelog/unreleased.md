@@ -40,6 +40,11 @@ changelog entry.
 
 ## Unreleased
 
+### Added
+
+- On Wayland, add `WindowExtWayland::kora_identity()` and `WindowEvent::IdentityChanged`
+  for compositor-authenticated Kora window identifiers and process workspaces.
+
 ### Fixed
 
 - On macOS, fix crash on macOS 26 by using objc2's `relax-sign-encoding` feature.

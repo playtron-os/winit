@@ -178,7 +178,7 @@ pub fn create_dnd_icon_surface(
             // Simple rounded-rect check.
             let inside = {
                 let (cx, cy) = match (x < radius, y < radius, x >= w - radius, y >= h - radius) {
-                    (true, true, _, _) => (radius, radius),
+                    (true, true, ..) => (radius, radius),
                     (_, true, true, _) => (w - radius - 1, radius),
                     (true, _, _, true) => (radius, h - radius - 1),
                     (_, _, true, true) => (w - radius - 1, h - radius - 1),
@@ -190,10 +190,10 @@ pub fn create_dnd_icon_surface(
             };
             if inside {
                 // ARGB: semi-transparent white.
-                canvas[offset] = 0xFF; // B
-                canvas[offset + 1] = 0xFF; // G
-                canvas[offset + 2] = 0xFF; // R
-                canvas[offset + 3] = 0xB0; // A
+                canvas[offset] = 0xff; // B
+                canvas[offset + 1] = 0xff; // G
+                canvas[offset + 2] = 0xff; // R
+                canvas[offset + 3] = 0xb0; // A
             } else {
                 canvas[offset] = 0;
                 canvas[offset + 1] = 0;
