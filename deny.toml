@@ -35,6 +35,13 @@ allow = [
 confidence-threshold = 1.0
 private = { ignore = true }
 
+[advisories]
+ignore = [
+    # sctk-adwaita -> ab_glyph -> owned_ttf_parser has no maintained drop-in upgrade.
+    # Remove this exception when the CSD font stack migrates.
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser is required by sctk-adwaita's current font stack; no safe upgrade exists" },
+]
+
 [bans]
 multiple-versions = "deny"
 skip = [
@@ -42,6 +49,11 @@ skip = [
     { crate = "bitflags@1", reason = "the ecosystem is in the process of migrating" },
     { crate = "rustix@0.38", reason = "the ecosystem is in the process of migrating" },
     { crate = "linux-raw-sys@0.4", reason = "the ecosystem is in the process of migrating" },
+    { crate = "syn@2", reason = "Wayland/NDK macros use syn 2 while newer serde and wasm macros use syn 3" },
+    { crate = "jni-sys@0.3", reason = "ndk 0.9 and android-activity use different JNI binding generations" },
+    { crate = "thiserror@1", reason = "ndk 0.9 still uses thiserror 1; android-activity and jni use 2" },
+    { crate = "thiserror-impl@1", reason = "derive companion required by ndk's thiserror 1" },
+    { crate = "redox_syscall@0.4", reason = "the current Redox backend API is older than orbclient's libredox dependency" },
 ]
 wildcards = "allow" # at least until https://github.com/EmbarkStudios/cargo-deny/issues/241 is fixed
 
@@ -52,11 +64,13 @@ interpreted = "deny"
 [[bans.build.bypass]]
 allow = [
     { path = "generate-bindings.sh", checksum = "268ec23248218d779e33853cdc60e2985e70214ff004716cd734270de1f6b561" },
+    # Developer import utility; not executed by the dependency build script.
+    { path = "android-games-sdk/import-games-sdk.sh", checksum = "98ed2741804d10ddbd8d035557897ab1edc5257705759377271dcb4ba5636446" },
 ]
 crate = "android-activity"
 
 [[bans.build.bypass]]
-allow-globs = ["ci/*", "githooks/*"]
+allow-globs = ["ci/*", "githooks/*", "cargo.sh"]
 crate = "zerocopy"
 
 [[bans.build.bypass]]

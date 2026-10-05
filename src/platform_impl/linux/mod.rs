@@ -77,11 +77,13 @@ pub struct PlatformSpecificWindowAttributes {
     /// client, to be made the parent of this window via `zxdg_importer_v2`.
     /// Used by portal file-chooser dialogs to attach to the requesting app's
     /// window. Ignored on X11.
+    #[cfg(wayland_platform)]
     pub wayland_parent: Option<String>,
     /// Wayland-only: give Kora's Halo a drag strip over the window's top edge
     /// (`kora_halo_header_manager_v1` overlay mode). For windows laid out
     /// chromeless, whose first row already clears the strip. Ignored where the
     /// compositor has no such global.
+    #[cfg(wayland_platform)]
     pub halo_header_overlay: bool,
     #[cfg(x11_platform)]
     pub x11: X11WindowAttributes,
@@ -106,7 +108,9 @@ impl Default for PlatformSpecificWindowAttributes {
         Self {
             name: None,
             activation_token: None,
+            #[cfg(wayland_platform)]
             wayland_parent: None,
+            #[cfg(wayland_platform)]
             halo_header_overlay: false,
             #[cfg(x11_platform)]
             x11: X11WindowAttributes {
