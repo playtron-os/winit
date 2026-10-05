@@ -162,8 +162,8 @@ pub struct WinitState {
     /// COSMIC tooltip manager.
     pub tooltip_manager: Option<CosmicTooltipManager>,
 
-    /// Kora Halo header manager, for letting the Halo float over a window's
-    /// top edge instead of reserving room above it.
+    /// Kora Halo header manager, for giving the Halo a drag strip over a
+    /// window's top edge.
     pub halo_header_manager: Option<KoraHaloHeaderManager>,
 
     /// Wayland DnD (drag-and-drop) manager.

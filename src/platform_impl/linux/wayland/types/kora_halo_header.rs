@@ -1,11 +1,11 @@
 //! Kora Halo header protocol.
 //!
-//! On Kora, the compositor draws window chrome as the Halo: a pill floating at
-//! the window's top edge. By default it reserves room above the client, so
-//! the window grows by the pill's height. A client laid out for chromeless
-//! windows — its first row already clear of the Halo — opts into `overlay`,
-//! and the pill floats over its top edge instead. The request only counts
-//! between creating the toplevel and its initial commit.
+//! On Kora, the compositor draws window chrome as the Halo: a pill floating
+//! above the window, outside its geometry, with nothing over the client by
+//! default. A client laid out for chromeless windows — its first row already
+//! clear of the strip — opts into `overlay`, which adds a drag strip over its
+//! top edge. The request only counts between creating the toplevel and its
+//! initial commit.
 
 use sctk::globals::GlobalData;
 use sctk::reexports::client::globals::{BindError, GlobalList};
@@ -47,9 +47,8 @@ impl KoraHaloHeaderManager {
         Ok(Self { manager })
     }
 
-    /// Let the Halo float over `surface`'s top edge rather than reserve room
-    /// above it. Must be sent after the surface has its `xdg_toplevel` role and
-    /// before its initial commit; later is a protocol error.
+    /// Give the Halo a drag strip over `surface`'s top edge. Must be sent after the surface has its
+    /// `xdg_toplevel` role and before its initial commit; later is a protocol error.
     pub fn set_overlay(&self, surface: &WlSurface) {
         self.manager.set_mode(surface, Mode::Overlay);
     }

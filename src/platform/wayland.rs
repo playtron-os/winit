@@ -433,7 +433,7 @@ pub trait WindowExtWayland {
     /// Stop receiving the special key.
     fn unregister_special_action(&self) -> bool;
 
-    /// Whether Kora's Halo header floats over this window's top edge, so the
+    /// Whether Kora's Halo has a drag strip over this window's top edge, so the
     /// window must keep its own controls clear of it.
     ///
     /// `true` only when the window was created with
@@ -839,13 +839,14 @@ pub trait WindowAttributesExtWayland {
     /// `zxdg_importer_v2`.
     fn with_wayland_parent(self, handle: impl Into<String>) -> Self;
 
-    /// Let Kora's Halo header float over this window's top edge instead of
-    /// reserving room above it (`kora_halo_header_manager_v1`, overlay mode).
+    /// Give Kora's Halo a drag strip over this window's top edge
+    /// (`kora_halo_header_manager_v1`, overlay mode). The Halo itself always
+    /// floats above the window, outside its geometry; without this nothing of
+    /// it reaches into the window.
     ///
     /// For a window laid out chromeless: its content is full-bleed and its
-    /// first row already sits clear of the Halo, so the pill can overlap the
-    /// top edge. The mode is sent before the window's initial commit, which is
-    /// the only time the protocol accepts it. No-op if the compositor lacks
+    /// first row already sits clear of the strip. The mode is sent before the window's initial
+    /// commit, which is the only time the protocol accepts it. No-op if the compositor lacks
     /// the global; [`WindowExtWayland::is_halo_header_overlay`] tells which.
     fn with_halo_header_overlay(self, overlay: bool) -> Self;
 }
