@@ -101,13 +101,12 @@ jobs:
         key: cargo-${{ matrix.toolchain }}-${{ matrix.platform.name }}-never-intended-to-be-found
         restore-keys: cargo-${{ matrix.toolchain }}-${{ matrix.platform.name }}
 
-    - name: Generate lockfile
-      # Also updates the crates.io index
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Generate MSRV-compatible lockfile
       run: |
-           cargo generate-lockfile
-           cargo update -p ahash --precise 0.8.7
-           cargo update -p bumpalo --precise 3.14.0
-           cargo update -p objc2-encode --precise 4.0.3
+           cargo generate-lockfile --config 'resolver.incompatible-rust-versions="fallback"'
+           # Newer releases that do not build on 1.70 although their metadata allows it.
+           cargo update -p foreign-types-macros --precise 0.2.3
            cargo update -p orbclient --precise 0.3.47
 
     - name: Install GCC Multilib

@@ -178,15 +178,20 @@ mod tests {
     wayland_client::delegate_noop!(Proxies: ignore XdgToplevel);
     wayland_client::delegate_noop!(Proxies: ignore KoraToplevelIdentityV1);
 
-    fn handle() -> (IdentityHandle, UnixStream, Connection) {
+    fn handle() -> Option<(IdentityHandle, UnixStream, Connection)> {
         let (client, server) = UnixStream::pair().unwrap();
-        let connection = Connection::from_socket(client).unwrap();
+        let connection = match Connection::from_socket(client) {
+            Ok(connection) => connection,
+            // CI's 32-bit Linux runners have no libwayland-client to load.
+            Err(wayland_client::ConnectError::NoWaylandLib) => return None,
+            Err(err) => panic!("{err}"),
+        };
         let proxies = connection.new_event_queue::<Proxies>();
         let registry = connection.display().get_registry(&proxies.handle(), ());
         let manager = IdentityManager { manager: registry.bind(1, 1, &proxies.handle(), ()) };
         let toplevel = registry.bind(2, 1, &proxies.handle(), ());
         let queue = connection.new_event_queue::<WinitState>();
-        (manager.get_identity(&toplevel, &queue.handle()), server, connection)
+        Some((manager.get_identity(&toplevel, &queue.handle()), server, connection))
     }
 
     fn pair(state: &mut IdentityState, identifier: &str, workspace: &str) {
@@ -256,7 +261,7 @@ mod tests {
 
     #[test]
     fn a_revoked_mapped_identity_gets_a_fresh_handle_for_remapping() {
-        let (mut handle, _server, _connection) = handle();
+        let Some((mut handle, _server, _connection)) = handle() else { return };
         let old_proxy = handle.handle.clone();
         let old_state = handle.state.clone();
         {
@@ -283,7 +288,7 @@ mod tests {
 
     #[test]
     fn an_unavailable_lookup_does_not_retry_forever() {
-        let (mut handle, _server, _connection) = handle();
+        let Some((mut handle, _server, _connection)) = handle() else { return };
         let original = handle.handle.clone();
         handle.state.lock().unwrap().event(Event::Closed);
         assert_eq!(handle.take_events(), vec![None]);
