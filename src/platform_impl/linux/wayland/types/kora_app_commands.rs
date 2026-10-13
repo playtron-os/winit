@@ -1,6 +1,6 @@
 //! Kora app commands: a window publishes its commands and recent items, and
 //! the shell (the Halo) invokes them in that window.
-//! XML mirrors cosmic-protocols 3a42592a's kora-app-commands-v1.xml.
+//! XML mirrors cosmic-protocols d9d99c6a's kora-app-commands-v1.xml (version 2).
 
 use std::sync::{Arc, Mutex};
 
@@ -88,7 +88,12 @@ fn sanitized(catalog: &AppCommands) -> AppCommands {
         if !ok {
             tracing::warn!("app command: `{}` breaks the catalog contract; dropped", command.id);
         } else if clean.commands.len() < MAX_COMMANDS {
-            clean.commands.push(command.clone());
+            let mut command = command.clone();
+            if command.quick_setting && !command.stateful {
+                tracing::warn!("app command: `{}` is a quick setting but not stateful", command.id);
+                command.quick_setting = false;
+            }
+            clean.commands.push(command);
         }
     }
     let mut recents: Vec<_> = catalog
@@ -143,7 +148,7 @@ pub struct AppCommandsManager {
 impl AppCommandsManager {
     /// Bind the global; absent on compositors without a Halo to publish to.
     pub fn new(globals: &GlobalList, queue: &QueueHandle<WinitState>) -> Result<Self, BindError> {
-        Ok(Self { manager: globals.bind(queue, 1..=1, GlobalData)? })
+        Ok(Self { manager: globals.bind(queue, 1..=2, GlobalData)? })
     }
 
     pub fn get_commands(
@@ -172,6 +177,8 @@ impl AppCommandsHandle {
         }
         let catalog = sanitized(catalog);
         let handle = &self.handle;
+        // A version 1 compositor refuses the flag as a protocol error.
+        let quick_settings = handle.version() >= 2;
         handle.clear();
         for (id, enabled) in &catalog.handles {
             handle.handle(id.clone(), u32::from(*enabled));
@@ -181,6 +188,7 @@ impl AppCommandsHandle {
             flags.set(CommandFlags::Menu, command.menu);
             flags.set(CommandFlags::Stateful, command.stateful);
             flags.set(CommandFlags::Bound, command.bound);
+            flags.set(CommandFlags::QuickSetting, quick_settings && command.quick_setting);
             handle.add_command(
                 command.id.clone(),
                 command.name.clone(),
@@ -295,6 +303,22 @@ mod tests {
         assert_eq!(recents, ["b", "a"]);
     }
 
+    /// The compositor refuses a quick setting that has no state to show.
+    #[test]
+    fn a_quick_setting_must_be_stateful() {
+        let catalog = AppCommands {
+            commands: vec![
+                AppCommand { quick_setting: true, ..command("files.plain") },
+                AppCommand { quick_setting: true, stateful: true, ..command("files.show-hidden") },
+            ],
+            ..AppCommands::default()
+        };
+        let clean = sanitized(&catalog);
+        let quick: Vec<_> =
+            clean.commands.iter().map(|c| (c.id.as_str(), c.quick_setting)).collect();
+        assert_eq!(quick, [("files.plain", false), ("files.show-hidden", true)]);
+    }
+
     #[test]
     fn only_the_newest_ten_recents_are_kept() {
         let catalog = AppCommands {
@@ -328,6 +352,8 @@ mod tests {
         use protocol::kora_app_commands_handle_v1::*;
         assert_eq!(KoraAppCommandsV1::interface().name, "kora_app_commands_v1");
         assert_eq!(KoraAppCommandsHandleV1::interface().name, "kora_app_commands_handle_v1");
+        assert_eq!(KoraAppCommandsV1::interface().version, 2);
+        assert_eq!(CommandFlags::QuickSetting.bits(), 8);
         assert_eq!(REQ_DONE_OPCODE, 7);
         assert_eq!(REQ_REQUEST_PALETTE_OPCODE, 8);
         assert_eq!(EVT_INVOKE_OPCODE, 0);

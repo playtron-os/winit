@@ -51,7 +51,8 @@ fn main() -> Result<(), impl std::error::Error> {
                     AppCommand {
                         stateful: true,
                         active: self.grid,
-                        menu: true,
+                        quick_setting: true,
+                        icon: if self.grid { "grid-3x3" } else { "square" }.into(),
                         ..command("example.grid", "Show the grid", "View")
                     },
                     command("example.export", "Export…", "File"),

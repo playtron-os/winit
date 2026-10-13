@@ -32,7 +32,7 @@
     display hints for bindings implemented by the application or compositor.
   </description>
 
-  <interface name="kora_app_commands_v1" version="1">
+  <interface name="kora_app_commands_v1" version="2">
     <description summary="register commands for an owned xdg_toplevel"/>
 
     <enum name="error">
@@ -57,7 +57,7 @@
     </request>
   </interface>
 
-  <interface name="kora_app_commands_handle_v1" version="1">
+  <interface name="kora_app_commands_handle_v1" version="2">
     <description summary="an atomic command catalog for one window">
       Catalog requests modify pending state. Done applies that state atomically;
       until then the shell displays the last committed catalog. After done,
@@ -80,9 +80,11 @@
     </enum>
 
     <enum name="command_flags" bitfield="true">
-      <entry name="menu" value="1" summary="nominate this command for the compact app menu"/>
+      <entry name="menu" value="1" summary="nominate this command for the compact app menu; shells without that menu ignore it"/>
       <entry name="stateful" value="2" summary="the command has an active state"/>
       <entry name="bound" value="4" summary="the application implements the advertised shortcut"/>
+      <entry name="quick_setting" value="8" since="2"
+             summary="show this stateful command as a toggle on the window's header"/>
     </enum>
 
     <request name="destroy" type="destructor">
@@ -114,6 +116,13 @@
         at most the first six menu nominees, in declaration order. Other commands
         remain available in the palette. Icon is a symbolic icon name, never a
         file path; an unsupported or empty name uses the generic command glyph.
+
+        Since version 2, quick_setting puts a stateful command on the window's
+        header as a toggle, drawn with its icon and pressed while active, and
+        keeps it in the palette. It requires the stateful flag. A quick setting
+        cannot be pinned, and the shell may fold it into the palette when the
+        window is narrow. An application that shows a different glyph for each
+        state replaces the command with the other icon and commits.
       </description>
       <arg name="id" type="string"/>
       <arg name="name" type="string"/>
