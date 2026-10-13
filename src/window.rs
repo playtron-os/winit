@@ -59,6 +59,9 @@ pub struct AppCommand {
     pub stateful: bool,
     /// The window itself binds `keys`.
     pub bound: bool,
+    /// A stateful command the shell shows as a toggle on the window's header,
+    /// not only in its palette. Ignored by shells without quick settings.
+    pub quick_setting: bool,
     pub enabled: bool,
     pub active: bool,
 }
