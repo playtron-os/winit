@@ -411,18 +411,21 @@ impl<T: 'static> EventLoop<T> {
                     configure.new_size.1.map(|v| v.get()),
                     configure.state,
                 );
-                let resized = self.with_state(|state| {
-                    state
+                let (resized, occluded) = self.with_state(|state| {
+                    let mut window = state
                         .windows
                         .get_mut()
                         .get_mut(&window_id)
                         .expect("got configure for dead window.")
                         .lock()
-                        .unwrap()
-                        .configure(configure, &state.shm, &state.subcompositor_state)
+                        .unwrap();
+                    let resized =
+                        window.configure(configure, &state.shm, &state.subcompositor_state);
+                    (resized, window.take_occluded())
                 });
                 tracing::debug!("single_iteration: configure applied, resized={}", resized);
                 compositor_update.resized |= resized;
+                compositor_update.occluded = occluded.or(compositor_update.occluded);
             }
         }
 
@@ -510,6 +513,16 @@ impl<T: 'static> EventLoop<T> {
                         resize_callback_elapsed,
                     );
                 }
+            }
+
+            if let Some(occluded) = compositor_update.occluded {
+                callback(
+                    Event::WindowEvent {
+                        window_id: crate::window::WindowId(window_id),
+                        event: WindowEvent::Occluded(occluded),
+                    },
+                    &self.window_target,
+                );
             }
 
             if compositor_update.close_window {
