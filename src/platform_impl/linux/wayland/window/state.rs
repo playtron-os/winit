@@ -77,6 +77,8 @@ const MIN_WINDOW_SIZE: LogicalSize<u32> = LogicalSize::new(2, 1);
 
 /// The state of the window which is being updated from the [`WinitState`].
 pub struct WindowState {
+    /// A change of the `suspended` state the last configure brought, not yet reported.
+    occluded: Option<bool>,
     identity: Option<crate::platform_impl::wayland::types::kora_toplevel_identity::IdentityHandle>,
     app_commands:
         Option<crate::platform_impl::wayland::types::kora_app_commands::AppCommandsHandle>,
@@ -322,6 +324,7 @@ impl WindowState {
             ime_allowed: false,
             ime_purpose: ImePurpose::Normal,
             last_configure: None,
+            occluded: None,
             max_inner_size: None,
             min_inner_size: MIN_WINDOW_SIZE,
             pointer_constraints,
@@ -482,6 +485,12 @@ impl WindowState {
         let new_state = configure.state;
         let old_state = self.last_configure.as_ref().map(|configure| configure.state);
 
+        // The compositor suspends a window nobody can see: minimized, or on a hidden workspace.
+        let suspended = new_state.contains(XdgWindowState::SUSPENDED);
+        if old_state.map_or(suspended, |old| old.contains(XdgWindowState::SUSPENDED) != suspended) {
+            self.occluded = Some(suspended);
+        }
+
         let state_change_requires_resize = old_state
             .map(|old_state| {
                 !old_state
@@ -501,6 +510,11 @@ impl WindowState {
         } else {
             false
         }
+    }
+
+    /// Take the occlusion change to report as `WindowEvent::Occluded`, if any.
+    pub fn take_occluded(&mut self) -> Option<bool> {
+        self.occluded.take()
     }
 
     /// Compute the bounds for the inner size of the surface.

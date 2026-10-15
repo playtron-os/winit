@@ -42,6 +42,7 @@ changelog entry.
 
 ### Added
 
+- On Wayland, send `WindowEvent::Occluded` when the compositor suspends or resumes the window.
 - On Wayland, add `WindowExtWayland::kora_identity()` and `WindowEvent::IdentityChanged`
   for compositor-authenticated Kora window identifiers and process workspaces.
 - On Wayland, add `WindowExtWayland::set_app_commands()`, `request_app_palette()` and

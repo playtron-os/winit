@@ -418,14 +418,19 @@ impl WindowHandler for WinitState {
                 configure.state,
             );
             // Apply immediately for initial configure.
-            self.window_compositor_updates[pos].resized |= self
+            let mut window = self
                 .windows
                 .get_mut()
                 .get_mut(&window_id)
                 .expect("got configure for dead window.")
                 .lock()
-                .unwrap()
-                .configure(configure, &self.shm, &self.subcompositor_state);
+                .unwrap();
+            let resized = window.configure(configure, &self.shm, &self.subcompositor_state);
+            let occluded = window.take_occluded();
+            drop(window);
+            let update = &mut self.window_compositor_updates[pos];
+            update.resized |= resized;
+            update.occluded = occluded.or(update.occluded);
         } else {
             let had_pending = self.window_compositor_updates[pos].pending_configure.is_some();
             tracing::debug!(
@@ -572,6 +577,9 @@ pub struct WindowCompositorUpdate {
     /// Close the window.
     pub close_window: bool,
 
+    /// The window became hidden (`true`) or visible again (`false`).
+    pub occluded: Option<bool>,
+
     /// Pending configure to apply. When multiple configures arrive in one
     /// dispatch cycle (e.g. during animated resize), only the latest is stored
     /// and applied once, avoiding hundreds of intermediate resize/geometry
@@ -586,6 +594,7 @@ impl WindowCompositorUpdate {
             resized: false,
             scale_changed: false,
             close_window: false,
+            occluded: None,
             pending_configure: None,
         }
     }
