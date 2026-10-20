@@ -6,6 +6,7 @@ use ahash::AHashMap;
 use tracing::warn;
 
 use sctk::reexports::client::backend::ObjectId;
+use sctk::reexports::client::protocol::wl_data_device::WlDataDevice;
 use sctk::reexports::client::protocol::wl_seat::WlSeat;
 use sctk::reexports::client::protocol::wl_touch::WlTouch;
 use sctk::reexports::client::{Connection, Proxy, QueueHandle};
@@ -13,6 +14,7 @@ use sctk::reexports::protocols::wp::relative_pointer::zv1::client::zwp_relative_
 use sctk::reexports::protocols::wp::text_input::zv3::client::zwp_text_input_v3::ZwpTextInputV3;
 
 use sctk::seat::pointer::{ThemeSpec, ThemedPointer};
+use sctk::seat::touch::TouchHandler;
 use sctk::seat::{Capability as SeatCapability, SeatHandler, SeatState};
 
 use crate::event::WindowEvent;
@@ -45,8 +47,11 @@ pub struct WinitSeatState {
     /// The mapping from touched points to the surfaces they're present.
     touch_map: AHashMap<i32, TouchPoint>,
 
-    /// The text input bound on the seat.
+    /// The text input bound on the seat. It lives as long as the seat, not a capability.
     text_input: Option<Arc<ZwpTextInputV3>>,
+
+    /// The data device for drag and drop. It lives as long as the seat, not a capability.
+    data_device: Option<WlDataDevice>,
 
     /// The relative pointer bound on the seat.
     relative_pointer: Option<ZwpRelativePointerV1>,
@@ -131,10 +136,14 @@ impl SeatHandler for WinitState {
 
                 seat_state.pointer = Some(themed_pointer);
 
-                // Create a wl_data_device for DnD on this seat.
-                if let Some(dnd_manager) = self.dnd_manager.as_ref() {
-                    let data_device = dnd_manager.get_data_device(&seat, queue_handle);
-                    self.dnd_data_devices.push(data_device);
+                // Create a wl_data_device for DnD on this seat, once: a second one would
+                // deliver every drag twice.
+                if seat_state.data_device.is_none() {
+                    if let Some(dnd_manager) = self.dnd_manager.as_ref() {
+                        let data_device = dnd_manager.get_data_device(&seat, queue_handle);
+                        self.dnd_data_devices.push(data_device.clone());
+                        seat_state.data_device = Some(data_device);
+                    }
                 }
             },
             _ => (),
@@ -153,8 +162,8 @@ impl SeatHandler for WinitState {
 
     fn remove_capability(
         &mut self,
-        _: &Connection,
-        _queue_handle: &QueueHandle<Self>,
+        connection: &Connection,
+        queue_handle: &QueueHandle<Self>,
         seat: WlSeat,
         capability: SeatCapability,
     ) {
@@ -166,13 +175,11 @@ impl SeatHandler for WinitState {
             },
         };
 
-        if let Some(text_input) = seat_state.text_input.take() {
-            text_input.destroy();
-        }
-
         match capability {
             SeatCapability::Touch => {
                 if let Some(touch) = seat_state.touch.take() {
+                    // Points still down get no up event: end them as a compositor cancel would.
+                    self.cancel(connection, queue_handle, &touch);
                     if touch.version() >= 3 {
                         touch.release();
                     }
@@ -194,9 +201,8 @@ impl SeatHandler for WinitState {
                     pointer_data.unlock_pointer();
                     pointer_data.unconfine_pointer();
 
-                    if pointer.pointer().version() >= 3 {
-                        pointer.pointer().release();
-                    }
+                    // Dropping the last handle releases the wl_pointer, its cursor-shape
+                    // device and its cursor surface.
                 }
             },
             SeatCapability::Keyboard => {
@@ -218,12 +224,30 @@ impl SeatHandler for WinitState {
 
     fn remove_seat(
         &mut self,
-        _connection: &Connection,
-        _queue_handle: &QueueHandle<Self>,
+        connection: &Connection,
+        queue_handle: &QueueHandle<Self>,
         seat: WlSeat,
     ) {
-        let _ = self.seats.remove(&seat.id());
-        self.on_keyboard_destroy(&seat.id());
+        // sctk removes the seat without removing its capabilities first.
+        use SeatCapability::{Keyboard, Pointer, Touch};
+        for capability in [Pointer, Keyboard, Touch] {
+            self.remove_capability(connection, queue_handle, seat.clone(), capability);
+        }
+
+        let Some(seat_state) = self.seats.remove(&seat.id()) else {
+            return;
+        };
+
+        if let Some(text_input) = seat_state.text_input {
+            text_input.destroy();
+        }
+
+        if let Some(data_device) = seat_state.data_device {
+            self.dnd_data_devices.retain(|device| device != &data_device);
+            if data_device.version() >= 2 {
+                data_device.release();
+            }
+        }
     }
 }
 

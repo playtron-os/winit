@@ -56,3 +56,6 @@ changelog entry.
 ### Fixed
 
 - On macOS, fix crash on macOS 26 by using objc2's `relax-sign-encoding` feature.
+- On Wayland, keep one drag-and-drop data device and one text input per seat when a
+  mouse or keyboard is unplugged and plugged back in, and cancel the touches still down
+  when the touchscreen goes away.
