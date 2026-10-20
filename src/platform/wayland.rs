@@ -536,6 +536,19 @@ pub trait WindowExtWayland {
     /// No-op on X11 (which already delivers all keys to the focused window) or
     /// if the compositor lacks `zwp_keyboard_shortcuts_inhibit_manager_v1`.
     fn set_keyboard_shortcuts_inhibit(&self, inhibit: bool);
+
+    /// Tell input methods the text around the caret of the focused field, so what
+    /// they insert, such as dictated words, can be spaced and cased to fit.
+    ///
+    /// Call it again whenever the text, caret or selection changes. Pass `None` for
+    /// a field that keeps its text to itself: the text input is then enabled again,
+    /// which makes input methods forget what they were told. Nothing is sent while
+    /// the IME purpose is [`ImePurpose::Password`](crate::window::ImePurpose::Password),
+    /// and text past the protocol's 4000-byte limit is cut to a window around the
+    /// caret and selection.
+    ///
+    /// A no-op on X11 and on compositors without `zwp_text_input_manager_v3`.
+    fn set_ime_surrounding_text(&self, surrounding: Option<&ImeSurroundingText>);
 }
 
 impl WindowExtWayland for Window {
@@ -868,6 +881,33 @@ impl WindowExtWayland for Window {
             },
         }
     }
+
+    #[inline]
+    fn set_ime_surrounding_text(&self, surrounding: Option<&ImeSurroundingText>) {
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => {
+                let _ = surrounding;
+            },
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => {
+                window.set_ime_surrounding_text(surrounding);
+            },
+        }
+    }
+}
+
+/// The text around the caret of the focused field, for
+/// [`WindowExtWayland::set_ime_surrounding_text`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct ImeSurroundingText {
+    /// The field's text, or the part of it around the caret and selection.
+    pub text: String,
+    /// The byte offset of the caret in `text`.
+    pub cursor: usize,
+    /// The byte offset of the selection's other end in `text`, or `cursor` when
+    /// nothing is selected.
+    pub anchor: usize,
 }
 
 /// Additional methods on [`WindowAttributes`] that are specific to Wayland.
