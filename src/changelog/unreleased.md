@@ -50,6 +50,8 @@ changelog entry.
   Kora's Halo (`kora_app_commands_v1`) and runs the ones picked there.
 - On Wayland, add `AppCommand::quick_setting`, which shows a stateful command as a
   toggle on the window's Halo (`kora_app_commands_v1` version 2).
+- On Wayland, add `WindowExtWayland::set_ime_surrounding_text()`, which tells input
+  methods the text around the caret (`set_surrounding_text`), never for a password field.
 
 ### Fixed
 

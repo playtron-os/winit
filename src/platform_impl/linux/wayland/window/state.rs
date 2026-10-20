@@ -36,6 +36,7 @@ use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
 use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
+use crate::platform::wayland::ImeSurroundingText;
 use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::wayland::types::background_effect::{
     BackgroundEffect, BackgroundEffectManager,
@@ -63,7 +64,8 @@ use crate::platform_impl::{PlatformCustomCursor, WindowId};
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
 
 use crate::platform_impl::wayland::seat::{
-    PointerConstraintsState, WinitPointerData, WinitPointerDataExt, ZwpTextInputV3Ext,
+    PointerConstraintsState, SurroundingChange, SurroundingText, WinitPointerData,
+    WinitPointerDataExt, ZwpTextInputV3Ext,
 };
 use crate::platform_impl::wayland::state::{WindowCompositorUpdate, WinitState};
 
@@ -142,6 +144,15 @@ pub struct WindowState {
 
     /// The current IME purpose.
     ime_purpose: ImePurpose,
+
+    /// The IME cursor area, resent whenever a text input is enabled.
+    ime_cursor_area: Option<(i32, i32, i32, i32)>,
+
+    /// The focused field's surrounding text, as last sent to the text inputs.
+    ime_surrounding: Option<SurroundingText>,
+
+    /// Whether an input method commit is what last changed the focused field.
+    ime_committed: bool,
 
     /// The text inputs observed on the window.
     text_inputs: Vec<ZwpTextInputV3>,
@@ -323,6 +334,9 @@ impl WindowState {
             last_touch_down: None,
             ime_allowed: false,
             ime_purpose: ImePurpose::Normal,
+            ime_cursor_area: None,
+            ime_surrounding: None,
+            ime_committed: false,
             last_configure: None,
             occluded: None,
             max_inner_size: None,
@@ -1231,13 +1245,15 @@ impl WindowState {
     /// Returns `true` if the requested state was applied.
     pub fn set_ime_allowed(&mut self, allowed: bool) -> bool {
         self.ime_allowed = allowed;
+        if !allowed {
+            self.ime_surrounding = None;
+        }
 
         let mut applied = false;
         for text_input in &self.text_inputs {
             applied = true;
             if allowed {
-                text_input.enable();
-                text_input.set_content_type_by_purpose(self.ime_purpose);
+                self.enable_text_input(text_input);
             } else {
                 text_input.disable();
             }
@@ -1247,13 +1263,26 @@ impl WindowState {
         applied
     }
 
+    /// Enable `text_input` with all the IME state the window holds; the caller commits.
+    pub fn enable_text_input(&self, text_input: &ZwpTextInputV3) {
+        text_input.enable();
+        text_input.set_content_type_by_purpose(self.ime_purpose);
+        if let Some((x, y, width, height)) = self.ime_cursor_area {
+            text_input.set_cursor_rectangle(x, y, width, height);
+        }
+        if let Some(surrounding) = &self.ime_surrounding {
+            text_input.set_surrounding(surrounding);
+        }
+    }
+
     /// Set the IME position.
-    pub fn set_ime_cursor_area(&self, position: LogicalPosition<u32>, size: LogicalSize<u32>) {
+    pub fn set_ime_cursor_area(&mut self, position: LogicalPosition<u32>, size: LogicalSize<u32>) {
         // FIXME: This won't fly unless user will have a way to request IME window per seat, since
         // the ime windows will be overlapping, but winit doesn't expose API to specify for
         // which seat we're setting IME position.
         let (x, y) = (position.x as i32, position.y as i32);
         let (width, height) = (size.width as i32, size.height as i32);
+        self.ime_cursor_area = Some((x, y, width, height));
         for text_input in self.text_inputs.iter() {
             text_input.set_cursor_rectangle(x, y, width, height);
             text_input.commit();
@@ -1264,10 +1293,52 @@ impl WindowState {
     pub fn set_ime_purpose(&mut self, purpose: ImePurpose) {
         self.ime_purpose = purpose;
 
+        // A password field's text is never shared, nor the text of the field before it.
+        let forget = purpose == ImePurpose::Password
+            && self.ime_surrounding.take().is_some()
+            && self.ime_allowed;
         for text_input in &self.text_inputs {
-            text_input.set_content_type_by_purpose(purpose);
+            if forget {
+                self.enable_text_input(text_input);
+            } else {
+                text_input.set_content_type_by_purpose(purpose);
+            }
             text_input.commit();
         }
+    }
+
+    /// Set the focused field's surrounding text.
+    pub fn set_ime_surrounding_text(&mut self, surrounding: Option<&ImeSurroundingText>) {
+        let next = SurroundingText::for_purpose(self.ime_purpose, surrounding);
+        let change = SurroundingChange::between(
+            self.ime_surrounding.as_ref(),
+            next.as_ref(),
+            self.ime_committed,
+        );
+        if change == SurroundingChange::Unchanged {
+            return;
+        }
+        self.ime_surrounding = next;
+        self.ime_committed = false;
+        if !self.ime_allowed {
+            return;
+        }
+
+        for text_input in &self.text_inputs {
+            match (change, &self.ime_surrounding) {
+                (SurroundingChange::Send(cause), Some(surrounding)) => {
+                    text_input.set_surrounding(surrounding);
+                    text_input.set_text_change_cause(cause);
+                },
+                _ => self.enable_text_input(text_input),
+            }
+            text_input.commit();
+        }
+    }
+
+    /// An input method commit was delivered: the field's next change is its doing.
+    pub fn ime_text_committed(&mut self) {
+        self.ime_committed = true;
     }
 
     /// Get the IME purpose.
