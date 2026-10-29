@@ -45,6 +45,18 @@ pub trait WindowExtStartupNotify {
     ///
     /// The token will be delivered inside
     fn request_activation_token(&self) -> Result<AsyncRequestSerial, NotSupportedError>;
+
+    /// Raise and focus this window with a token another client obtained, the way a
+    /// single-instance application answers a second launch that was handed one.
+    ///
+    /// The windowing system decides from the token whether the window may take focus; an
+    /// invalid or expired token is ignored.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - **Wayland:** Requires `xdg_activation_v1`.
+    /// - **X11:** Completes the token's startup sequence and asks for focus.
+    fn activate_with_token(&self, token: ActivationToken);
 }
 
 pub trait WindowAttributesExtStartupNotify {
@@ -71,6 +83,10 @@ impl EventLoopExtStartupNotify for ActiveEventLoop {
 impl WindowExtStartupNotify for Window {
     fn request_activation_token(&self) -> Result<AsyncRequestSerial, NotSupportedError> {
         self.window.request_activation_token()
+    }
+
+    fn activate_with_token(&self, token: ActivationToken) {
+        self.window.activate_with_token(token)
     }
 }
 

@@ -24,7 +24,7 @@ use crate::platform_impl::{
     Fullscreen, MonitorHandle as PlatformMonitorHandle, OsError, PlatformIcon,
 };
 use crate::window::{
-    Cursor, CursorGrabMode, ImePurpose, ResizeDirection, Theme, UserAttentionType,
+    ActivationToken, Cursor, CursorGrabMode, ImePurpose, ResizeDirection, Theme, UserAttentionType,
     WindowAttributes, WindowButtons, WindowLevel,
 };
 
@@ -866,6 +866,13 @@ impl Window {
         xdg_activation_token.commit();
 
         Ok(serial)
+    }
+
+    pub fn activate_with_token(&self, token: ActivationToken) {
+        match self.xdg_activation.as_ref() {
+            Some(xdg_activation) => xdg_activation.activate(token.token, self.surface()),
+            None => warn!("`activate_with_token` isn't supported"),
+        }
     }
 
     #[inline]

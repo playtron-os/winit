@@ -28,8 +28,8 @@ use crate::platform_impl::{
     PlatformIcon, VideoModeHandle as PlatformVideoModeHandle,
 };
 use crate::window::{
-    CursorGrabMode, ImePurpose, ResizeDirection, Theme, UserAttentionType, WindowAttributes,
-    WindowButtons, WindowLevel,
+    ActivationToken, CursorGrabMode, ImePurpose, ResizeDirection, Theme, UserAttentionType,
+    WindowAttributes, WindowButtons, WindowLevel,
 };
 
 use super::util::{self, SelectedCursor};
@@ -1818,6 +1818,13 @@ impl UnownedWindow {
             .send((self.id(), serial))
             .expect("activation token channel should never be closed");
         Ok(serial)
+    }
+
+    pub fn activate_with_token(&self, token: ActivationToken) {
+        if let Err(err) = self.xconn.remove_activation_token(self.xwindow, &token.token) {
+            warn!("Failed to complete the startup sequence: {err}");
+        }
+        self.focus_window();
     }
 
     #[inline]
