@@ -90,8 +90,10 @@ pub trait ActiveEventLoopExtWayland {
 
     /// Resize a popup surface.
     ///
-    /// Updates the popup's surface size and viewport. The compositor will be
-    /// notified via a surface commit. Returns true if the popup was found.
+    /// Updates the popup's surface size and viewport, moves the card the
+    /// compositor blurs, shadows and keeps on screen to the new size, and
+    /// places the popup again. It all applies with the popup's next buffer,
+    /// so draw one at the new size. Returns true if the popup was found.
     #[cfg(wayland_platform)]
     fn resize_popup(&self, popup_id: PopupId, width: u32, height: u32) -> bool;
 

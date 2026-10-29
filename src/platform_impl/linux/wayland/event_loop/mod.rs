@@ -20,9 +20,10 @@ use sctk::reexports::calloop_wayland_source::WaylandSource;
 use sctk::reexports::client::{globals, Connection, QueueHandle};
 use sctk::shell::xdg::popup::Popup;
 use tracing::warn;
-use wayland_protocols::xdg::shell::client::xdg_positioner;
 
-use super::types::xdg_popup::{holds_topmost_grab, PopupId, PopupSettings, PopupState};
+use super::types::xdg_popup::{
+    card_rect, holds_topmost_grab, PopupId, PopupPadding, PopupPlacement, PopupSettings, PopupState,
+};
 
 use crate::cursor::OnlyCursorImage;
 use crate::dpi::LogicalSize;
@@ -881,8 +882,8 @@ impl ActiveEventLoop {
         settings: PopupSettings,
         parent_popup: Option<PopupId>,
     ) -> Option<PopupId> {
-        use sctk::compositor::{Region, Surface};
-        use sctk::shell::xdg::{XdgPositioner, XdgSurface as XdgSurfaceTrait};
+        use sctk::compositor::Surface;
+        use sctk::shell::xdg::XdgSurface as XdgSurfaceTrait;
         use sctk::shell::WaylandSurface;
 
         let mut state = self.state.borrow_mut();
@@ -952,35 +953,12 @@ impl ActiveEventLoop {
         // Create a new surface for the popup
         let surface = Surface::new(&*state.compositor_state, &self.queue_handle).ok()?;
 
-        // Create positioner
-        let positioner = XdgPositioner::new(&state.xdg_shell).ok()?;
-        // Use window_geometry dimensions for positioner size if available.
-        // Per xdg_positioner spec, set_size should match the window geometry
-        // (visible content), not the full surface (which may include shadows).
-        // This ensures FLIP constraint adjustment positions based on visible
-        // content bounds, not the full surface including shadow padding.
-        if let Some((_gx, _gy, gw, gh)) = settings.window_geometry {
-            positioner.set_size(gw, gh);
-        } else {
-            positioner.set_size(settings.size.0 as i32, settings.size.1 as i32);
-        }
-        positioner.set_anchor_rect(
-            settings.anchor_rect.0,
-            settings.anchor_rect.1,
-            settings.anchor_rect.2,
-            settings.anchor_rect.3,
-        );
-        positioner.set_anchor(settings.anchor.to_xdg());
-        positioner.set_gravity(settings.gravity.to_xdg());
-        positioner.set_offset(settings.offset.0, settings.offset.1);
-        // Enable reactive repositioning when parent moves
-        positioner.set_reactive();
-        // Apply constraint adjustment from settings (0 = no adjustment)
-        positioner.set_constraint_adjustment(
-            xdg_positioner::ConstraintAdjustment::from_bits_truncate(
-                settings.constraint_adjustment,
-            ),
-        );
+        // The card is the window geometry: the surface inside any padding left for a
+        // client-drawn shadow. It is what the positioner places and the compositor blurs.
+        let padding = PopupPadding::around(settings.size, settings.window_geometry);
+        let placement = PopupPlacement::from(&settings);
+        let (_, _, card_width, card_height) = card_rect(settings.size, padding);
+        let positioner = placement.positioner(&state.xdg_shell, (card_width, card_height))?;
 
         // Drop parent guard before creating popup to avoid holding lock
         // (parent_guard is already dropped due to scoping above)
@@ -1030,37 +1008,6 @@ impl ActiveEventLoop {
             }
         }
 
-        // Set window geometry to tell compositor about visible content bounds.
-        // This ensures constraint adjustment (SLIDE/FLIP) constrains against
-        // the visible content area, not the full surface including shadows.
-        // When no explicit geometry is provided, default to the full popup size
-        // so the compositor always has accurate geometry for anchor calculations.
-        if let Some((gx, gy, gw, gh)) = settings.window_geometry {
-            popup.xdg_surface().set_window_geometry(gx, gy, gw, gh);
-        } else {
-            popup.xdg_surface().set_window_geometry(
-                0,
-                0,
-                settings.size.0 as i32,
-                settings.size.1 as i32,
-            );
-        }
-
-        // Restrict the input region to the visible content (the window geometry
-        // rect) so the transparent shadow padding around the popup does not
-        // capture pointer input. Without this, a click landing on the padding
-        // ring counts as "inside" the popup surface and is swallowed instead of
-        // dismissing the grab — making it impossible to click just outside the
-        // visible menu to trigger a new action. Uses the same surface-local
-        // logical coordinates as set_window_geometry above; copy semantics let
-        // the region be dropped right after the request.
-        if let Some((gx, gy, gw, gh)) = settings.window_geometry {
-            if let Ok(region) = Region::new(&*state.compositor_state) {
-                region.add(gx, gy, gw, gh);
-                popup.wl_surface().set_input_region(Some(region.wl_region()));
-            }
-        }
-
         // Corner radius first: the compositor rounds the blur and the shadow
         // to whatever the surface has hinted, so hinting after them would
         // leave both square for a frame.
@@ -1072,7 +1019,7 @@ impl ActiveEventLoop {
         });
 
         // A drop shadow drawn by the compositor rather than by padding the
-        // surface out and drawing one — which does not combine with blur.
+        // surface out and drawing one.
         let shadow = settings
             .shadow
             .then(|| {
@@ -1091,36 +1038,16 @@ impl ActiveEventLoop {
 
         // Blur behind the popup. Both protocols are driven from the one
         // setting: a compositor implements one or the other, and the one it
-        // does not understand never binds. The region is the whole surface,
-        // which is right precisely because the shadow is the compositor's —
-        // there is no transparent padding around the card to blur by mistake.
+        // does not understand never binds. Their regions are the card, sent
+        // with the window geometry below.
         let (background_effect, kwin_blur) = if settings.blur {
-            let blur_region = || {
-                Region::new(&*state.compositor_state).ok().map(|region| {
-                    region.add(0, 0, settings.size.0 as i32, settings.size.1 as i32);
-                    region
-                })
-            };
-
             let effect = state.background_effect_manager.as_ref().map(|manager| {
-                let effect = manager.get_background_effect(popup.wl_surface(), &self.queue_handle);
-                if let Some(region) = blur_region() {
-                    effect.set_blur_region(Some(region.wl_region()));
-                } else {
-                    tracing::warn!("Could not build a blur region for the popup");
-                }
-                effect
+                manager.get_background_effect(popup.wl_surface(), &self.queue_handle)
             });
-
-            let blur = state.kwin_blur_manager.as_ref().map(|manager| {
-                let blur = manager.blur(popup.wl_surface(), &self.queue_handle);
-                if let Some(region) = blur_region() {
-                    blur.set_region(Some(region.wl_region()));
-                }
-                blur.commit();
-                blur
-            });
-
+            let blur = state
+                .kwin_blur_manager
+                .as_ref()
+                .map(|manager| manager.blur(popup.wl_surface(), &self.queue_handle));
             if effect.is_none() && blur.is_none() {
                 tracing::info!("No blur protocol available; the popup will not be blurred");
             }
@@ -1128,9 +1055,6 @@ impl ActiveEventLoop {
         } else {
             (None, None)
         };
-
-        // Commit the surface to trigger configure
-        popup.wl_surface().commit();
 
         // Generate popup ID
         let popup_id = PopupId::new();
@@ -1151,6 +1075,16 @@ impl ActiveEventLoop {
         popup_state.corner_radius = corner_radius;
         popup_state.parent_popup = parent_popup;
         popup_state.grabbed = grabbed;
+        popup_state.padding = padding;
+        popup_state.placement = placement;
+
+        // The window geometry keeps the card, not any padding, on screen when
+        // the compositor slides or flips the popup; the input region lets a
+        // click on the padding dismiss it.
+        popup_state.send_card(&state.compositor_state);
+
+        // Commit the surface to trigger configure
+        popup_state.popup.wl_surface().commit();
 
         // Set up compositor-driven tooltip positioning if requested
         if let Some((offset_x, offset_y)) = settings.tooltip_offset {
@@ -1250,10 +1184,13 @@ impl ActiveEventLoop {
 
     /// Resize a popup surface.
     ///
-    /// Updates the popup's stored size, viewport destination, and commits
-    /// the surface so the compositor picks up the new dimensions.
+    /// Updates the popup's stored size and viewport destination, moves its
+    /// card (window geometry, blur and input regions) to the new size, and
+    /// asks the compositor to place it again. All of it applies with the
+    /// popup's next buffer, so the caller draws one at the new size.
     pub fn resize_popup(&self, popup_id: PopupId, width: u32, height: u32) -> bool {
         let mut state = self.state.borrow_mut();
+        let state = &mut *state;
         let Some(popup_state) = state.popups.get_mut(&popup_id) else {
             return false;
         };
@@ -1264,7 +1201,11 @@ impl ActiveEventLoop {
             viewport.set_destination(width as i32, height as i32);
         }
 
-        popup_state.popup.wl_surface().commit();
+        popup_state.send_card(&state.compositor_state);
+        // The compositor places a tooltip that follows the pointer itself.
+        if popup_state.tooltip.is_none() {
+            popup_state.reposition(&state.xdg_shell);
+        }
         self.event_loop_awakener.ping();
 
         true

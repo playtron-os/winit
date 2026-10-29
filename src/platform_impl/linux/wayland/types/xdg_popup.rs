@@ -3,8 +3,12 @@
 //! This module provides xdg_popup support for context menus and other
 //! transient surfaces that can extend outside their parent window bounds.
 
+use sctk::compositor::{CompositorState, Region};
+use sctk::reexports::client::Proxy;
 use sctk::reexports::protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use sctk::shell::xdg::popup::Popup;
+use sctk::shell::xdg::{XdgPositioner, XdgShell};
+use wayland_protocols::xdg::shell::client::xdg_positioner;
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
 
 use crate::dpi::LogicalSize;
@@ -138,15 +142,13 @@ pub struct PopupSettings {
     ///
     /// Needs a compositor implementing one of the blur protocols, and content
     /// that is translucent — an opaque card has nothing to show the blur
-    /// through. The blurred area is the whole surface, so a surface padded out
-    /// for a client-drawn shadow would be blurred past its visible edge; pair
-    /// this with `shadow` instead of padding.
+    /// through. The blurred area is the card: the window geometry, or the
+    /// whole surface without one. It follows the surface when it resizes.
     pub blur: bool,
     /// Ask the compositor to draw a drop shadow behind the popup.
     ///
-    /// The alternative to padding the surface out and drawing one, which does
-    /// not combine with `blur`: the blurred region would have to be inset to
-    /// match the padding, leaving two rectangles to keep in agreement.
+    /// The alternative to padding the surface out and drawing one, whose
+    /// padding is then only an invisible ring around the card.
     pub shadow: bool,
     /// Corner radius hinted to the compositor, in logical pixels.
     ///
@@ -220,6 +222,91 @@ pub struct PopupState {
     pub shadow: Option<ShadowController>,
     /// Corner radius handle, held for the popup's lifetime.
     pub corner_radius: Option<CornerRadiusController>,
+    /// Space a `window_geometry` left around the card, kept as the surface resizes.
+    pub padding: Option<PopupPadding>,
+    /// What placed the popup, to place it again when it resizes.
+    pub placement: PopupPlacement,
+    /// The last `xdg_popup.reposition` token sent.
+    pub repositions: u32,
+}
+
+/// Space around a popup's card on its surface, in logical pixels.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PopupPadding {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+impl PopupPadding {
+    /// The padding `window_geometry` leaves on a `size` surface; `None` without one.
+    pub fn around(size: (u32, u32), window_geometry: Option<(i32, i32, i32, i32)>) -> Option<Self> {
+        let (x, y, width, height) = window_geometry?;
+        Some(Self {
+            left: x,
+            top: y,
+            right: size.0 as i32 - x - width,
+            bottom: size.1 as i32 - y - height,
+        })
+    }
+}
+
+/// The card on a `size` surface with `padding` around it, as surface-local `(x, y, width,
+/// height)`: the window geometry, the region blurred behind it, and on a padded surface the input
+/// region.
+pub fn card_rect(size: (u32, u32), padding: Option<PopupPadding>) -> (i32, i32, i32, i32) {
+    let padding = padding.unwrap_or_default();
+    (
+        padding.left,
+        padding.top,
+        (size.0 as i32 - padding.left - padding.right).max(0),
+        (size.1 as i32 - padding.top - padding.bottom).max(0),
+    )
+}
+
+/// The positioner rules a popup was placed by.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PopupPlacement {
+    pub anchor_rect: (i32, i32, i32, i32),
+    pub anchor: PopupAnchor,
+    pub gravity: PopupGravity,
+    pub offset: (i32, i32),
+    pub constraint_adjustment: u32,
+}
+
+impl From<&PopupSettings> for PopupPlacement {
+    fn from(settings: &PopupSettings) -> Self {
+        Self {
+            anchor_rect: settings.anchor_rect,
+            anchor: settings.anchor,
+            gravity: settings.gravity,
+            offset: settings.offset,
+            constraint_adjustment: settings.constraint_adjustment,
+        }
+    }
+}
+
+impl PopupPlacement {
+    /// A positioner placing a card of `size` by these rules.
+    ///
+    /// The size is the card's, not the surface's, so the compositor keeps what is visible on
+    /// screen when it slides or flips the popup.
+    pub fn positioner(&self, xdg_shell: &XdgShell, size: (i32, i32)) -> Option<XdgPositioner> {
+        let positioner = XdgPositioner::new(xdg_shell).ok()?;
+        positioner.set_size(size.0, size.1);
+        let (x, y, width, height) = self.anchor_rect;
+        positioner.set_anchor_rect(x, y, width, height);
+        positioner.set_anchor(self.anchor.to_xdg());
+        positioner.set_gravity(self.gravity.to_xdg());
+        positioner.set_offset(self.offset.0, self.offset.1);
+        // Placed again when the parent moves.
+        positioner.set_reactive();
+        positioner.set_constraint_adjustment(
+            xdg_positioner::ConstraintAdjustment::from_bits_truncate(self.constraint_adjustment),
+        );
+        Some(positioner)
+    }
 }
 
 impl PopupState {
@@ -243,7 +330,60 @@ impl PopupState {
             blur: None,
             shadow: None,
             corner_radius: None,
+            padding: None,
+            placement: PopupPlacement::default(),
+            repositions: 0,
         }
+    }
+
+    /// Tells the compositor where the card is on the surface at its current size: the window
+    /// geometry, the region blurred behind it and, on a padded surface, the input region.
+    ///
+    /// Double-buffered, so it takes effect with the surface's next commit.
+    pub fn send_card(&self, compositor: &CompositorState) {
+        let (x, y, width, height) = card_rect((self.size.width, self.size.height), self.padding);
+        self.popup.xdg_surface().set_window_geometry(x, y, width, height);
+        let card = || {
+            let region = Region::new(compositor).ok();
+            match &region {
+                Some(region) => region.add(x, y, width, height),
+                None => tracing::warn!("Could not build a region for the popup's card"),
+            }
+            region
+        };
+        // A click on the padding lands outside the popup, and so dismisses it.
+        if self.padding.is_some() {
+            if let Some(region) = card() {
+                self.popup.wl_surface().set_input_region(Some(region.wl_region()));
+            }
+        }
+        if let Some(effect) = &self.background_effect {
+            if let Some(region) = card() {
+                effect.set_blur_region(Some(region.wl_region()));
+            }
+        }
+        if let Some(blur) = &self.blur {
+            if let Some(region) = card() {
+                blur.set_region(Some(region.wl_region()));
+            }
+            blur.commit();
+        }
+    }
+
+    /// Asks the compositor to place the popup again by its placement, for its card's current
+    /// size: one flipped above its anchor stays against it, and one that grew stays on screen.
+    ///
+    /// The compositor answers with a configure. Needs xdg-shell 3; does nothing before.
+    pub fn reposition(&mut self, xdg_shell: &XdgShell) {
+        if self.popup.xdg_popup().version() < 3 {
+            return;
+        }
+        let (_, _, width, height) = card_rect((self.size.width, self.size.height), self.padding);
+        let Some(positioner) = self.placement.positioner(xdg_shell, (width, height)) else {
+            return;
+        };
+        self.repositions = self.repositions.wrapping_add(1);
+        self.popup.reposition(&positioner, self.repositions);
     }
 }
 
@@ -393,9 +533,52 @@ pub enum PopupEvent {
 #[cfg(test)]
 mod tests {
     use super::{
-        holds_topmost_grab, plan_destroy_tree, release_dismissed, subtree_leaf_first,
-        DismissedPopup, PopupId,
+        card_rect, holds_topmost_grab, plan_destroy_tree, release_dismissed, subtree_leaf_first,
+        DismissedPopup, PopupId, PopupPadding,
     };
+
+    // A context menu measured with an Open and an Open With row, which then
+    // lost one when no app turned out to open the file: 36px shorter.
+    const OPENED: (u32, u32) = (280, 356);
+    const SHRUNK: (u32, u32) = (280, 320);
+
+    #[test]
+    fn unpadded_card_is_the_whole_surface_at_every_size() {
+        assert_eq!(card_rect(OPENED, None), (0, 0, 280, 356));
+        assert_eq!(
+            card_rect(SHRUNK, None),
+            (0, 0, 280, 320),
+            "the blur and window geometry follow the surface down"
+        );
+        assert_eq!(card_rect((280, 400), None), (0, 0, 280, 400), "and up");
+    }
+
+    #[test]
+    fn padding_stays_put_as_the_surface_resizes() {
+        // 20px of shadow padding all round, the card inside it.
+        let padding = PopupPadding::around((320, 396), Some((20, 20, 280, 356)));
+        assert_eq!(padding, Some(PopupPadding { left: 20, top: 20, right: 20, bottom: 20 }));
+        assert_eq!(card_rect((320, 396), padding), (20, 20, 280, 356));
+        assert_eq!(card_rect((320, 360), padding), (20, 20, 280, 320));
+    }
+
+    #[test]
+    fn uneven_padding_keeps_each_side() {
+        // A shadow offset down: more room below than above.
+        let padding = PopupPadding::around((320, 406), Some((20, 10, 280, 356)));
+        assert_eq!(card_rect((320, 370), padding), (20, 10, 280, 320));
+    }
+
+    #[test]
+    fn no_window_geometry_means_no_padding() {
+        assert_eq!(PopupPadding::around(OPENED, None), None);
+    }
+
+    #[test]
+    fn a_surface_smaller_than_its_padding_has_an_empty_card() {
+        let padding = PopupPadding::around((320, 396), Some((20, 20, 280, 356)));
+        assert_eq!(card_rect((30, 30), padding), (20, 20, 0, 0));
+    }
 
     fn ids(raw: &[u64]) -> Vec<PopupId> {
         raw.iter().copied().map(PopupId).collect()
